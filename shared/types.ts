@@ -1,7 +1,7 @@
 // Portions adapted from teddashh/multi-ai-chat (MIT).
 // Extended for Multi-AI Chat Desktop per docs/SPEC.md v1.1.
 
-export type AIProvider = 'chatgpt' | 'claude' | 'gemini' | 'grok' | 'meta';
+export type AIProvider = 'chatgpt' | 'grok' | 'gemini';
 
 // Snapshot schema compatibility alias.
 export type AIProviderV2 = AIProvider;

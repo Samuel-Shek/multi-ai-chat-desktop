@@ -206,7 +206,7 @@ describe('ReplayPanel', () => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false,
       blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['claude', 'gemini'], aliased: [] },
+      preflight: { ok: false, unavailable: ['grok', 'gemini'], aliased: [] },
     });
     const onOpenLogin = vi.fn().mockResolvedValue(undefined);
     const panel = new ReplayPanel({ onOpenLogin });
@@ -216,19 +216,19 @@ describe('ReplayPanel', () => {
 
     const html = renderToStaticMarkup(panel.render());
     expect(html).toContain(t('replay.cannotStartReplay', 'en'));
-    expect(html).toContain(`Claude ${t('replay.unavailable', 'en')}`);
+    expect(html).toContain(`Grok ${t('replay.unavailable', 'en')}`);
     expect(html).toContain(`Gemini ${t('replay.unavailable', 'en')}`);
     expect(replaySnapshot).toHaveBeenCalledTimes(1);
 
     propsOf(buttonWithText(panel.render(), t('replay.openLogin', 'en'))).onClick?.();
-    expect(onOpenLogin).toHaveBeenCalledWith('claude');
+    expect(onOpenLogin).toHaveBeenCalledWith('grok');
     expect(host.provider.openLogin).not.toHaveBeenCalled();
   });
 
   it.each(['host', 'callback', 'sync-callback'] as const)('shows a retryable login error via %s without restarting replay', async (path) => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false, blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['gemini'], aliased: [] },
     });
     const onOpenLogin = vi.fn().mockResolvedValue(undefined);
     const login = path === 'host' ? vi.mocked(host.provider.openLogin) : onOpenLogin;
@@ -238,16 +238,16 @@ describe('ReplayPanel', () => {
       return Promise.reject(error);
     });
     const panel = new ReplayPanel({
-      activeProviders: ['chatgpt', 'claude', 'gemini', 'meta'],
+      activeProviders: ['chatgpt', 'grok', 'gemini', 'gemini'],
       onOpenLogin: path === 'host' ? undefined : onOpenLogin,
     });
     await panel.startReplay({ kind: 'last', snapshot: buildSnapshot() });
 
     expect(() => propsOf(buttonWithText(panel.render(), t('replay.openLogin', 'en'))).onClick?.()).not.toThrow();
     await vi.waitFor(() => expect(renderToStaticMarkup(panel.render()).includes('role="alert"')).toBe(true));
-    expect(renderToStaticMarkup(panel.render())).toContain('Couldn&#x27;t open Meta AI. Please try again.');
+    expect(renderToStaticMarkup(panel.render())).toContain('Couldn&#x27;t open Gemini. Please try again.');
     propsOf(buttonWithText(panel.render(), t('provider.retry', 'en'))).onClick?.();
-    await vi.waitFor(() => expect(login.mock.calls).toEqual([['meta'], ['meta']]));
+    await vi.waitFor(() => expect(login.mock.calls).toEqual([['gemini'], ['gemini']]));
     expect(path === 'host' ? onOpenLogin : host.provider.openLogin).not.toHaveBeenCalled();
     expect(replaySnapshot).toHaveBeenCalledTimes(1);
     expect(panel.state.block?.reason).toBe('preflight');
@@ -257,7 +257,7 @@ describe('ReplayPanel', () => {
   it.each(['host', 'callback'] as const)('ignores duplicate Open Login and Retry clicks while %s login is pending', async (path) => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false, blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['gemini'], aliased: [] },
     });
     let rejectFirst!: (reason: Error) => void;
     const first = new Promise<void>((_, reject) => { rejectFirst = reject; });
@@ -279,12 +279,12 @@ describe('ReplayPanel', () => {
     retryClick();
     retryClick();
     openClick();
-    expect(login.mock.calls).toEqual([['meta'], ['meta']]);
+    expect(login.mock.calls).toEqual([['gemini'], ['gemini']]);
 
     resolveRetry();
     await retry;
     openClick();
-    expect(login.mock.calls).toEqual([['meta'], ['meta'], ['meta']]);
+    expect(login.mock.calls).toEqual([['gemini'], ['gemini'], ['gemini']]);
     expect(replaySnapshot).toHaveBeenCalledTimes(1);
     expect(path === 'host' ? onOpenLogin : host.provider.openLogin).not.toHaveBeenCalled();
     expect(panel.state.notice).toBeUndefined();
@@ -293,7 +293,7 @@ describe('ReplayPanel', () => {
   it('keeps a stale Login request guarded until it settles, then allows a new Login', async () => {
     vi.mocked(replaySnapshot).mockResolvedValue({
       ok: false, blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['gemini'], aliased: [] },
     });
     let reject!: (reason: Error) => void;
     const pending = new Promise<void>((_, fail) => { reject = fail; });
@@ -311,24 +311,24 @@ describe('ReplayPanel', () => {
     await pending.catch(() => undefined);
     expect(panel.state.notice).toBeUndefined();
     openClick();
-    expect(onOpenLogin.mock.calls).toEqual([['meta'], ['meta']]);
+    expect(onOpenLogin.mock.calls).toEqual([['gemini'], ['gemini']]);
     expect(replaySnapshot).toHaveBeenCalledTimes(2);
   });
 
   it('removes Login retry when that provider becomes standby and guards an old retry click', async () => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false, blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['gemini'], aliased: [] },
     });
     vi.mocked(host.provider.openLogin).mockRejectedValueOnce(new Error('login unavailable'));
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
     const panel = new ReplayPanel({ activeProviders });
     await panel.startReplay({ kind: 'last', snapshot: buildSnapshot() });
     propsOf(buttonWithText(panel.render(), t('replay.openLogin', 'en'))).onClick?.();
     await vi.waitFor(() => expect(renderToStaticMarkup(panel.render()).includes('role="alert"')).toBe(true));
     const oldRetry = buttonWithText(panel.render(), t('provider.retry', 'en'));
 
-    activeProviders.splice(activeProviders.indexOf('meta'), 1, 'grok');
+    activeProviders.splice(activeProviders.indexOf('gemini'), 1, 'grok');
     expect(findAllElements(panel.render(), (element) => element.type === 'button'
       && textOf(element).includes(t('provider.retry', 'en')))).toHaveLength(0);
     propsOf(oldRetry).onClick?.();
@@ -340,7 +340,7 @@ describe('ReplayPanel', () => {
   it.each(['replay', 'delete'] as const)('does not replace a newer %s result with an old Login rejection', async (action) => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false, blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['gemini'], aliased: [] },
     });
     let reject!: (reason: Error) => void;
     const pending = new Promise<void>((_, fail) => { reject = fail; });
@@ -366,11 +366,11 @@ describe('ReplayPanel', () => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false,
       blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['gemini'], aliased: [] },
     });
     const onOpenLogin = vi.fn().mockResolvedValue(undefined);
     const panel = new ReplayPanel({
-      activeProviders: ['chatgpt', 'claude', 'gemini', 'grok'],
+      activeProviders: ['chatgpt', 'grok'],
       onOpenLogin,
     });
 
@@ -379,7 +379,7 @@ describe('ReplayPanel', () => {
 
     const tree = panel.render();
     const html = renderToStaticMarkup(tree);
-    expect(html).toContain(`Meta AI ${t('settings.providerStandby', 'en')}`);
+    expect(html).toContain(`Gemini ${t('settings.providerStandby', 'en')}`);
     expect(html).not.toContain(t('replay.preflightHelp', 'en'));
     expect(findAllElements(
       tree,
@@ -397,12 +397,12 @@ describe('ReplayPanel', () => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false,
       blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['claude', 'meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['grok', 'gemini'], aliased: [] },
     });
     const onOpenLogin = vi.fn().mockResolvedValue(undefined);
     const onOpenSettings = vi.fn();
     const panel = new ReplayPanel({
-      activeProviders: ['chatgpt', 'claude', 'gemini', 'grok'],
+      activeProviders: ['chatgpt', 'grok'],
       onOpenLogin,
       onOpenSettings,
     });
@@ -410,8 +410,8 @@ describe('ReplayPanel', () => {
 
     const tree = panel.render();
     const html = renderToStaticMarkup(tree);
-    expect(html).toContain(`Claude ${t('replay.unavailable', 'en')}`);
-    expect(html).toContain(`Meta AI ${t('settings.providerStandby', 'en')}`);
+    expect(html).toContain(`Grok ${t('replay.unavailable', 'en')}`);
+    expect(html).toContain(`Gemini ${t('settings.providerStandby', 'en')}`);
     expect(html).toContain(t('replay.preflightHelp', 'en'));
     expect(findAllElements(
       tree,
@@ -426,18 +426,18 @@ describe('ReplayPanel', () => {
   it('replaces login retry with Settings after that provider becomes standby', async () => {
     vi.mocked(replaySnapshot).mockResolvedValueOnce({
       ok: false, blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+      preflight: { ok: false, unavailable: ['gemini'], aliased: [] },
     });
     vi.mocked(host.provider.openLogin).mockRejectedValueOnce(new Error('login unavailable'));
     const onOpenSettings = vi.fn();
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
     const panel = new ReplayPanel({ activeProviders, onOpenSettings });
     await panel.startReplay({ kind: 'last', snapshot: buildSnapshot() });
     propsOf(buttonWithText(panel.render(), t('replay.openLogin', 'en'))).onClick?.();
     await vi.waitFor(() => expect(renderToStaticMarkup(panel.render()).includes('role="alert"')).toBe(true));
     const oldRetry = buttonWithText(panel.render(), t('provider.retry', 'en'));
 
-    activeProviders.splice(activeProviders.indexOf('meta'), 1, 'grok');
+    activeProviders.splice(activeProviders.indexOf('gemini'), 1, 'grok');
     expect(findAllElements(panel.render(), (element) => element.type === 'button'
       && textOf(element).includes(t('provider.retry', 'en')))).toHaveLength(0);
     propsOf(oldRetry).onClick?.();
@@ -469,7 +469,7 @@ function buildSnapshot(overrides: Partial<ExecutionSnapshot> = {}): ExecutionSna
     createdAt: '2026-07-06T00:00:00.000Z',
     completedAt: '2026-07-06T00:01:00.000Z',
     adapterVersions: {},
-    roleMap: { pro: 'chatgpt', con: 'claude', judge: 'grok', summary: 'gemini' },
+    roleMap: { pro: 'chatgpt', con: 'grok', judge: 'grok', summary: 'gemini' },
     redactionTier: 'full-local',
     userQuestion: inlineRef('clean replay question'),
     steps: [],

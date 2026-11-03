@@ -23,15 +23,15 @@ describe('auto focus helpers', () => {
       shouldAutoFocus({
         autoFollowEnabled: false,
         candidate: 'chatgpt',
-        centered: 'claude',
+        centered: 'grok',
       }),
     ).toBe(false);
     expect(
       shouldAutoFocus({
         autoFollowEnabled: true,
-        manualLock: { provider: 'claude', at: 10 },
+        manualLock: { provider: 'grok', at: 10 },
         candidate: 'chatgpt',
-        centered: 'claude',
+        centered: 'grok',
       }),
     ).toBe(false);
     expect(
@@ -44,22 +44,22 @@ describe('auto focus helpers', () => {
     expect(
       shouldAutoFocus({
         autoFollowEnabled: true,
-        centered: 'claude',
+        centered: 'grok',
       }),
     ).toBe(false);
     expect(
       shouldAutoFocus({
         autoFollowEnabled: true,
         candidate: 'chatgpt',
-        centered: 'claude',
+        centered: 'grok',
       }),
     ).toBe(true);
   });
 
   it('keeps a manual lock alive while role assignments continue and expires after idle', () => {
-    const lock = { provider: 'claude' as const, at: 1000 };
+    const lock = { provider: 'grok' as const, at: 1000 };
     expect(refreshManualLockOnRoleAssignment(lock, 1000 + MANUAL_LOCK_IDLE_MS - 1)).toEqual({
-      provider: 'claude',
+      provider: 'grok',
       at: 1000 + MANUAL_LOCK_IDLE_MS - 1,
     });
     expect(refreshManualLockOnRoleAssignment(lock, 1000 + MANUAL_LOCK_IDLE_MS)).toBeUndefined();
@@ -72,20 +72,20 @@ describe('auto focus helpers', () => {
   });
 
   it('keeps manual lock idle expiry frozen while workflow is paused', () => {
-    const lock = { provider: 'claude' as const, at: 1000 };
+    const lock = { provider: 'grok' as const, at: 1000 };
     expect(
       refreshManualLockOnRoleAssignment(lock, 1000 + MANUAL_LOCK_IDLE_MS + 1, {
         idlePaused: true,
       }),
-    ).toEqual({ provider: 'claude', at: 1000 + MANUAL_LOCK_IDLE_MS + 1 });
+    ).toEqual({ provider: 'grok', at: 1000 + MANUAL_LOCK_IDLE_MS + 1 });
   });
 
   it('creates a temporary lock during pointerdown debounce', () => {
     expect(pointerDebounceLock(undefined, 1000)).toBeUndefined();
-    expect(pointerDebounceLock({ provider: 'claude', at: 1000 }, 1000 + POINTERDOWN_DEBOUNCE_MS - 1)).toEqual({
-      provider: 'claude',
+    expect(pointerDebounceLock({ provider: 'grok', at: 1000 }, 1000 + POINTERDOWN_DEBOUNCE_MS - 1)).toEqual({
+      provider: 'grok',
       at: 1000,
     });
-    expect(pointerDebounceLock({ provider: 'claude', at: 1000 }, 1000 + POINTERDOWN_DEBOUNCE_MS)).toBeUndefined();
+    expect(pointerDebounceLock({ provider: 'grok', at: 1000 }, 1000 + POINTERDOWN_DEBOUNCE_MS)).toBeUndefined();
   });
 });

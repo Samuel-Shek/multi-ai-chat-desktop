@@ -53,7 +53,7 @@ vi.mock('../host', () => ({
   },
 }));
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini', 'grok'];
 
 function state(provider: AIProvider, sendable = true): ProviderState {
   return {
@@ -196,7 +196,7 @@ describe('workflow graph foundation', () => {
 
   it('assigns a distinct lens to every Brainstorm seat when one provider repeats', () => {
     const lenses = Array.from({ length: 4 }, (_, index) => {
-      const prompt = PROMPTS.brainstorm.buildPrompt('question', 1, index + 1, 'claude', []);
+      const prompt = PROMPTS.brainstorm.buildPrompt('question', 1, index + 1, 'grok', []);
       return prompt.match(/Your assigned lens is: ([^\n]+)\./)?.[1];
     });
 
@@ -205,11 +205,11 @@ describe('workflow graph foundation', () => {
   });
 
   it('blocks Brainstorm when a seated provider is unavailable', async () => {
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude', false), state('gemini'), state('grok')]);
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok', false), state('gemini')]);
 
     await expect(preflightGraph(brainstormGraph, DEFAULT_ROUNDTABLE_ROLES)).resolves.toMatchObject({
       ok: false,
-      unavailable: ['claude'],
+      unavailable: ['grok'],
       aliased: [],
     });
   });
@@ -221,7 +221,7 @@ describe('workflow graph foundation', () => {
     ['Roundtable', roundtableGraph, DEFAULT_ROUNDTABLE_ROLES],
     ['Brainstorm', brainstormGraph, DEFAULT_ROUNDTABLE_ROLES],
   ] as const)('requires Grok for the four-provider default %s setup', async (_name, graph, roles) => {
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude'), state('gemini'), state('grok', false)]);
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok'), state('gemini'), state('grok', false)]);
 
     await expect(preflightGraph(graph, roles)).resolves.toMatchObject({
       ok: false,
@@ -249,17 +249,17 @@ describe('workflow graph foundation', () => {
   });
 
   it('preflights serial graphs with the existing sendable predicate', async () => {
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude', false), state('gemini'), state('grok')]);
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok', false), state('gemini')]);
     await expect(preflightGraph(debateGraph, DEFAULT_DEBATE_ROLES)).resolves.toMatchObject({
       ok: false,
-      unavailable: ['claude'],
+      unavailable: ['grok'],
       aliased: [],
     });
   });
 
   it('blocks an inactive standby role without rewriting the supplied role map', async () => {
     const roles = { ...DEFAULT_DEBATE_ROLES };
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'gemini'];
     vi.mocked(host.connections.get).mockResolvedValue([...activeProviders, 'grok' as const].map((provider) => state(provider)));
 
     await expect(preflightGraph(debateGraph, roles, activeProviders)).resolves.toMatchObject({
@@ -269,8 +269,8 @@ describe('workflow graph foundation', () => {
     });
     expect(roles).toEqual(DEFAULT_DEBATE_ROLES);
     expect(isInactiveStandbyProvider('grok', activeProviders)).toBe(true);
-    expect(isInactiveStandbyProvider('claude', activeProviders)).toBe(false);
-    expect(isInactiveStandbyProvider('claude')).toBe(false);
+    expect(isInactiveStandbyProvider('chatgpt', activeProviders)).toBe(false);
+    expect(isInactiveStandbyProvider('grok')).toBe(false);
   });
 
   it('rejects unknown prompt builders and unresolved output refs', () => {

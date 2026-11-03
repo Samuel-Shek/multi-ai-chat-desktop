@@ -102,10 +102,10 @@ describe('ChatArea thinking indicator', () => {
     const html = renderToStaticMarkup(
       createElement(ChatArea, {
         locale: 'en',
-        states: states({ chatgpt: state('chatgpt', true), claude: state('claude', false) }),
+        states: states({ chatgpt: state('chatgpt', true), grok: state('grok', false) }),
         messages: [
           { id: 'ai-chatgpt-1', role: 'ai', provider: 'chatgpt', content: 'final answer', final: true },
-          { id: 'ai-claude-1', role: 'ai', provider: 'claude', content: 'streaming answer', final: false },
+          { id: 'ai-grok-1', role: 'ai', provider: 'grok', content: 'streaming answer', final: false },
           { id: 'ai-system-1', role: 'ai', provider: 'system', content: 'system content', final: false },
         ],
       }),
@@ -129,7 +129,7 @@ describe('text center presentation hidden set', () => {
       show: vi.fn().mockResolvedValue(undefined),
     };
     const previousPresentation = setProviderPresentation(defaultPresentation(), 'chatgpt', 'center');
-    const nextPresentation = setProviderPresentation(previousPresentation, 'claude', 'center');
+    const nextPresentation = setProviderPresentation(previousPresentation, 'grok', 'center');
 
     const previousHidden = presentationHiddenProvidersForCenterSurface({
       centerSurface: 'text',
@@ -148,7 +148,7 @@ describe('text center presentation hidden set', () => {
 
     expect(previousHidden.has('chatgpt')).toBe(true);
     expect(nextHidden.has('chatgpt')).toBe(false);
-    expect(nextHidden.has('claude')).toBe(true);
+    expect(nextHidden.has('grok')).toBe(true);
 
     await applyCenterHiddenCommands({
       host,
@@ -163,7 +163,7 @@ describe('text center presentation hidden set', () => {
     });
 
     expect(host.show).not.toHaveBeenCalled();
-    expect(host.hide).toHaveBeenCalledWith('claude');
+    expect(host.hide).toHaveBeenCalledWith('grok');
   });
 });
 

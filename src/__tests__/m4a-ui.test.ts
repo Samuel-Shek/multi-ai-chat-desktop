@@ -36,7 +36,7 @@ import {
   type StepTimeoutEvent,
 } from '../workflow/stepTimeout';
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
 
 function state(provider: AIProvider, sendable = true): ProviderState {
   return {
@@ -71,7 +71,7 @@ describe('M4a UI helpers', () => {
     debateRoles.con = 'gemini';
 
     expect(defaultRolesForMode('debate')).toEqual(DEFAULT_DEBATE_ROLES);
-    expect(DEFAULT_DEBATE_ROLES.con).toBe('claude');
+    expect(DEFAULT_DEBATE_ROLES.con).toBe('grok');
   });
 
   it('hides loaded providers once for nested overlays and restores only at count zero', () => {
@@ -80,16 +80,16 @@ describe('M4a UI helpers', () => {
     const show = vi.fn();
     const host = { hide, show };
 
-    guard.open(['chatgpt', 'claude'], host);
+    guard.open(['chatgpt', 'grok'], host);
     guard.open(['gemini'], host);
-    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'claude']);
+    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'grok']);
     expect(show).not.toHaveBeenCalled();
 
     guard.close(host);
     expect(show).not.toHaveBeenCalled();
 
     guard.close(host);
-    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'claude']);
+    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'grok']);
   });
 
   it('serializes a rapid overlay restore behind an in-flight hide', async () => {
@@ -119,19 +119,19 @@ describe('M4a UI helpers', () => {
     const host = { hide, show };
 
     guard.open(['chatgpt'], host);
-    guard.close(host, ['claude']);
+    guard.close(host, ['grok']);
 
-    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'claude']);
-    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['claude']);
+    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'grok']);
+    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['grok']);
   });
 
   it('maps preflight unavailable and aliased providers to labelled dialog rows with reasons', () => {
     const model = buildPreflightDialogModel(
       'debate',
-      { ok: false, unavailable: ['chatgpt', 'claude', 'gemini'], aliased: ['grok'] },
+      { ok: false, unavailable: ['chatgpt', 'grok', 'gemini'], aliased: ['grok'] },
       states({
         chatgpt: state('chatgpt', false),
-        claude: { ...state('claude'), login: 'logged_out' },
+        grok: { ...state('grok'), login: 'logged_out' },
         gemini: { ...state('gemini'), dom: 'unknown' },
       }),
     );
@@ -139,7 +139,7 @@ describe('M4a UI helpers', () => {
     expect(model.title).toBe(formatI18n(t('preflight.cannotStart', 'en'), { mode: modeName('debate', 'en') }));
     expect(model.unavailable.map((item) => [item.provider, item.reason])).toEqual([
       ['chatgpt', t('preflight.noWebview', 'en')],
-      ['claude', t('preflight.needsLogin', 'en')],
+      ['grok', t('preflight.needsLogin', 'en')],
       ['gemini', t('preflight.stale', 'en')],
     ]);
     expect(model.aliased).toEqual([{ provider: 'grok', label: 'Grok', reason: t('preflight.aliasedProvider', 'en') }]);
@@ -154,22 +154,21 @@ describe('M4a UI helpers', () => {
   });
 
   it('defaults free targets to four shipped sendable providers and toggles the selected send list', () => {
-    const snapshot = states({ claude: state('claude', false) });
-    expect(defaultTargets(snapshot, [...DEFAULT_FREE_TARGET_PROVIDERS])).toEqual(['chatgpt', 'gemini', 'grok']);
+    const snapshot = states({ grok: state('grok', false) });
+    expect(defaultTargets(snapshot, [...DEFAULT_FREE_TARGET_PROVIDERS])).toEqual(['chatgpt', 'gemini']);
 
     let selected = defaultTargets(snapshot, [...DEFAULT_FREE_TARGET_PROVIDERS]);
     selected = toggleTarget(selected, 'gemini');
-    expect(freeModeTargets(selected, snapshot)).toEqual(['chatgpt', 'grok']);
+    expect(freeModeTargets(selected, snapshot)).toEqual(['chatgpt']);
     selected = toggleTarget(selected, 'gemini');
-    expect(freeModeTargets(selected, snapshot)).toEqual(['chatgpt', 'grok', 'gemini']);
+    expect(freeModeTargets(selected, snapshot)).toEqual(['chatgpt', 'gemini']);
     expect(freeModeTargets([], snapshot)).toEqual([]);
   });
 
   it('keeps manually selected targets after provider readiness changes', () => {
     const chatgptOnly = states({
-      claude: state('claude', false),
-      gemini: state('gemini', false),
       grok: state('grok', false),
+      gemini: state('gemini', false),
     });
 
     let selection = applyFreeTargetDefaults(
@@ -181,7 +180,6 @@ describe('M4a UI helpers', () => {
     selection = markFreeTargetsTouched(selection, ['grok']);
     const grokOnly = states({
       chatgpt: state('chatgpt', false),
-      claude: state('claude', false),
       gemini: state('gemini', false),
     });
     selection = applyFreeTargetDefaults(
@@ -197,9 +195,8 @@ describe('M4a UI helpers', () => {
   it('has no effective free-mode send target when every provider is unavailable', () => {
     const unavailable = states({
       chatgpt: state('chatgpt', false),
-      claude: state('claude', false),
-      gemini: state('gemini', false),
       grok: state('grok', false),
+      gemini: state('gemini', false),
     });
 
     expect(hasEffectiveFreeModeTargets([], unavailable)).toBe(false);
@@ -211,7 +208,7 @@ describe('M4a UI helpers', () => {
   it('waits for transiently non-sendable providers to recover before fan-out', async () => {
     vi.useFakeTimers();
     try {
-      let current = states({ claude: state('claude', false), grok: state('grok', false) });
+      let current = states({ grok: state('grok', false) });
       const wait = waitForProvidersSendable(providers, () => current, 20_000, 250);
       await vi.advanceTimersByTimeAsync(500);
       current = states();
@@ -219,7 +216,7 @@ describe('M4a UI helpers', () => {
       await expect(wait).resolves.toBeUndefined();
       expect(freeModeTargets(providers, current)).toEqual(providers);
 
-      current = states({ claude: state('claude', false) });
+      current = states({ grok: state('grok', false) });
       const timedOut = waitForProvidersSendable(providers, () => current, 1_000, 250);
       await vi.advanceTimersByTimeAsync(1_500);
       await expect(timedOut).resolves.toBeUndefined();
@@ -294,12 +291,12 @@ describe('M4a UI helpers', () => {
     expect(modal).toEqual({ provider: 'chatgpt', remainingMs: 0, timedOut: true });
     expect(
       nextStepTimeoutState(undefined, {
-        provider: 'claude',
+        provider: 'grok',
         remainingMs: 0,
         timedOut: true,
         failureKind: 'provider-error',
       }),
-    ).toEqual({ provider: 'claude', remainingMs: 0, timedOut: true, failureKind: 'provider-error' });
+    ).toEqual({ provider: 'grok', remainingMs: 0, timedOut: true, failureKind: 'provider-error' });
     expect(nextStepTimeoutState(modal, { provider: 'grok', remainingMs: 600_000, timedOut: false })).toEqual(modal);
     expect(nextStepTimeoutState(modal, { type: 'settle' })).toEqual(modal);
     expect(nextStepTimeoutState(countdown, { type: 'settle' })).toBeUndefined();
@@ -340,16 +337,16 @@ describe('M4a UI helpers', () => {
     const host = { hide, show };
 
     guard.open(['chatgpt'], host);
-    guard.reconcile(['chatgpt', 'claude'], host);
-    guard.reconcile(['chatgpt', 'claude'], host);
-    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'claude']);
+    guard.reconcile(['chatgpt', 'grok'], host);
+    guard.reconcile(['chatgpt', 'grok'], host);
+    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'grok']);
 
     guard.close(host);
-    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'claude']);
+    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'grok']);
   });
 
   it('maps serial preflight workflow results and ignores successful or free results', () => {
-    const preflight = { ok: false as const, unavailable: ['claude' as AIProvider], aliased: [] };
+    const preflight = { ok: false as const, unavailable: ['grok' as AIProvider], aliased: [] };
 
     expect(preflightFromResult('debate', { ok: false, preflight })).toEqual({ mode: 'debate', result: preflight });
     expect(preflightFromResult('free', { ok: false, preflight })).toBeUndefined();

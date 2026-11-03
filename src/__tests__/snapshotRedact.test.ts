@@ -123,8 +123,8 @@ function buildFullLocalSnapshot(): ExecutionSnapshot {
     appVersion: '0.0.0-test',
     createdAt: '2026-07-06T00:00:00.000Z',
     completedAt: '2026-07-06T00:01:00.000Z',
-    adapterVersions: { chatgpt: 3, claude: 4 },
-    roleMap: { pro: 'chatgpt', con: 'claude' },
+    adapterVersions: { chatgpt: 3, grok: 4 },
+    roleMap: { pro: 'chatgpt', con: 'grok' },
     redactionTier: 'full-local',
     userQuestion: inlineRef('raw user question'),
     steps: [
@@ -139,9 +139,9 @@ function buildFullLocalSnapshot(): ExecutionSnapshot {
       },
       {
         nodeId: 'con',
-        provider: 'claude',
+        provider: 'grok',
         inputRef: inlineRef('follow up prompt'),
-        outputRef: inlineRef('claude output two'),
+        outputRef: inlineRef('grok output two'),
         status: 'done',
         startedAt: '2026-07-06T00:00:11.000Z',
         completedAt: '2026-07-06T00:00:20.000Z',

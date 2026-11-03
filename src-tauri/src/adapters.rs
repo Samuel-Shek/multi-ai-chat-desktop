@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::{OnceLock, RwLock};
-use tauri::{Emitter, Manager};
-use tauri_plugin_opener::OpenerExt;
-
-use crate::settings;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
@@ -66,45 +62,6 @@ pub struct AdapterUrls {
 
 static ADAPTERS: OnceLock<HashMap<String, Adapter>> = OnceLock::new();
 static BROKEN_ADAPTERS: OnceLock<HashSet<String>> = OnceLock::new();
-static OVERRIDES: OnceLock<RwLock<HashMap<String, Adapter>>> = OnceLock::new();
-static REFRESH_LOCK: OnceLock<tauri::async_runtime::Mutex<()>> = OnceLock::new();
-
-const ADAPTER_FETCH_CAP: usize = 64 * 1024;
-const DEFAULT_ADAPTER_BASE: &str =
-    "https://raw.githubusercontent.com/TED-H-com/multi-ai-chat-desktop/main/adapters";
-
-fn overrides() -> &'static RwLock<HashMap<String, Adapter>> {
-    OVERRIDES.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-fn refresh_lock() -> &'static tauri::async_runtime::Mutex<()> {
-    REFRESH_LOCK.get_or_init(|| tauri::async_runtime::Mutex::new(()))
-}
-
-fn set_override(provider: &str, adapter: Adapter) {
-    if let Ok(mut map) = overrides().write() {
-        map.insert(provider.to_string(), adapter);
-    }
-}
-
-fn overlay_version(provider: &str) -> u32 {
-    overrides()
-        .read()
-        .ok()
-        .and_then(|map| map.get(provider).map(|adapter| adapter.adapter_version))
-        .unwrap_or(0)
-}
-
-fn bundled_version(provider: &str) -> u32 {
-    adapters()
-        .get(provider)
-        .map(|adapter| adapter.adapter_version)
-        .unwrap_or(0)
-}
-
-fn current_version(provider: &str) -> u32 {
-    overlay_version(provider).max(bundled_version(provider))
-}
 
 #[tauri::command]
 pub async fn adapter_push(
@@ -138,45 +95,7 @@ pub async fn report_broken(
     Ok(raw)
 }
 
-#[tauri::command]
-pub async fn open_adapter_issue(
-    app: tauri::AppHandle,
-    webview: tauri::Webview,
-    provider: String,
-    body: String,
-) -> Result<(), String> {
-    crate::webviews::ensure_control_webview(&webview)?;
-    let title = format!("[adapter-broken] {provider}");
-    let mut url =
-        tauri::Url::parse("https://github.com/TED-H-com/multi-ai-chat-desktop/issues/new")
-            .map_err(|error| error.to_string())?;
-    url.query_pairs_mut()
-        .append_pair("labels", "adapter-broken")
-        .append_pair("title", &title)
-        .append_pair("body", &body);
-    let url = url.to_string();
-    const MAX_ISSUE_URL: usize = 7500; // GitHub issue-prefill URL ceiling is ~8 KB
-    if url.len() > MAX_ISSUE_URL {
-        return Err(
-            "report is too large to prefill a GitHub issue - please file it manually".to_string(),
-        );
-    }
-    if url.starts_with("https://") {
-        app.opener()
-            .open_url(url.as_str(), None::<&str>)
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
 pub(crate) fn get_adapter(provider: &str) -> Result<Adapter, String> {
-    if let Some(adapter) = overrides()
-        .read()
-        .ok()
-        .and_then(|map| map.get(provider).cloned())
-    {
-        return Ok(adapter);
-    }
     adapters()
         .get(provider)
         .cloned()
@@ -184,7 +103,7 @@ pub(crate) fn get_adapter(provider: &str) -> Result<Adapter, String> {
 }
 
 pub(crate) fn all_provider_states() -> Vec<String> {
-    let mut providers = vec!["chatgpt", "claude", "gemini", "grok", "meta"]
+    let mut providers = vec!["chatgpt", "gemini", "grok"]
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<_>>();
@@ -210,10 +129,8 @@ fn init_adapters() {
     let mut broken = HashSet::new();
     for (provider, text) in [
         ("chatgpt", include_str!("../../adapters/chatgpt.json")),
-        ("claude", include_str!("../../adapters/claude.json")),
         ("gemini", include_str!("../../adapters/gemini.json")),
         ("grok", include_str!("../../adapters/grok.json")),
-        ("meta", include_str!("../../adapters/meta.json")),
     ] {
         match serde_json::from_str::<Adapter>(text)
             .map_err(|error| error.to_string())
@@ -323,59 +240,6 @@ fn validate_detectors(name: &str, detectors: &[Detector]) -> Result<(), String> 
     Ok(())
 }
 
-fn validate_downloaded_adapter(provider: &str, adapter: &Adapter) -> Result<(), String> {
-    validate_adapter(adapter)?;
-    if adapter.provider != provider {
-        return Err("provider mismatch".into());
-    }
-    let bundled = adapters()
-        .get(provider)
-        .ok_or_else(|| format!("missing bundled adapter: {provider}"))?;
-    ensure_url_scope_within(
-        "urls.app",
-        std::slice::from_ref(&adapter.urls.app),
-        std::slice::from_ref(&bundled.urls.app),
-    )?;
-    ensure_url_scope_within(
-        "urls.login",
-        std::slice::from_ref(&adapter.urls.login),
-        std::slice::from_ref(&bundled.urls.login),
-    )?;
-    ensure_url_scope_within(
-        "urls.match",
-        &adapter.urls.match_patterns,
-        &bundled.urls.match_patterns,
-    )?;
-    ensure_url_scope_within(
-        "urls.ssoMatch",
-        &adapter.urls.sso_match,
-        &bundled.urls.sso_match,
-    )?;
-    Ok(())
-}
-
-fn ensure_url_scope_within(
-    field: &str,
-    candidates: &[String],
-    bundled: &[String],
-) -> Result<(), String> {
-    let bundled_scopes = bundled
-        .iter()
-        .map(|value| parse_adapter_url_scope(value))
-        .collect::<Result<Vec<_>, _>>()?;
-    for value in candidates {
-        let candidate = parse_adapter_url_scope(value)?;
-        let allowed = bundled_scopes.iter().any(|scope| {
-            candidate.host == scope.host
-                && (scope.path == "/" || path_matches_prefix(&scope.path, &candidate.path))
-        });
-        if !allowed {
-            return Err(format!("{field} expands bundled URL scope: {value}"));
-        }
-    }
-    Ok(())
-}
-
 #[derive(Debug, PartialEq, Eq)]
 struct AdapterUrlScope {
     host: String,
@@ -468,7 +332,6 @@ pub(crate) fn url_allowed_for_sso(provider: &str, url: &tauri::Url) -> Result<bo
         "appleid.apple.com",
         "login.microsoftonline.com",
         "login.live.com",
-        "github.com",
     ];
     // SHARED IdP hosts + generic Google regional ccTLD: https ONLY.
     if url.scheme() == "https" {
@@ -514,30 +377,6 @@ pub(crate) fn url_matches_provider_app(provider: &str, url: &tauri::Url) -> Resu
         .any(|pattern| url_matches(pattern, url)))
 }
 
-fn build_source_url(base: Option<&str>, provider: &str) -> Result<String, String> {
-    let url = match base {
-        Some(base) => format!("{}/{provider}.json", base.trim_end_matches('/')),
-        None => format!("{DEFAULT_ADAPTER_BASE}/{provider}.json"),
-    };
-    if !url.starts_with("https://") {
-        return Err(format!("adapter base URL must be https: {url}"));
-    }
-    Ok(url)
-}
-
-/// Returns Some(kind) if the fetched version should be applied; None to skip.
-fn apply_decision(fetched: u32, current: u32, allow_downgrade: bool) -> Option<&'static str> {
-    if fetched > current {
-        Some("updated")
-    } else if fetched == current {
-        None
-    } else if allow_downgrade {
-        Some("downgraded")
-    } else {
-        None
-    }
-}
-
 fn url_matches(pattern: &str, url: &tauri::Url) -> bool {
     if !plain_https_url(url) {
         return false;
@@ -567,149 +406,6 @@ fn path_matches_prefix(expected: &str, actual: &str) -> bool {
         || actual
             .strip_prefix(expected)
             .is_some_and(|suffix| suffix.starts_with('/'))
-}
-
-fn cache_path(app: &tauri::AppHandle, provider: &str) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?
-        .join("adapters-cache")
-        .join(format!("{provider}.json")))
-}
-
-fn hydrate_from_cache(app: &tauri::AppHandle, provider: &str) {
-    let Ok(path) = cache_path(app, provider) else {
-        return;
-    };
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return;
-    };
-    let Ok(adapter) = serde_json::from_str::<Adapter>(&text) else {
-        return;
-    };
-    if validate_downloaded_adapter(provider, &adapter).is_err() {
-        return;
-    }
-    if adapter.adapter_version >= bundled_version(provider)
-        && adapter.adapter_version > overlay_version(provider)
-    {
-        set_override(provider, adapter);
-    }
-}
-
-async fn fetch_adapter_text(url: &str) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|error| error.to_string())?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!(
-            "fetch {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("error")
-        ));
-    }
-    if let Some(len) = response.content_length() {
-        if len as usize > ADAPTER_FETCH_CAP {
-            return Err(format!("adapter file too large: {len} bytes"));
-        }
-    }
-    let bytes = response.bytes().await.map_err(|error| error.to_string())?;
-    if bytes.len() > ADAPTER_FETCH_CAP {
-        return Err(format!("adapter file too large: {} bytes", bytes.len()));
-    }
-    String::from_utf8(bytes.to_vec()).map_err(|error| error.to_string())
-}
-
-fn emit_notice(
-    app: &tauri::AppHandle,
-    provider: &str,
-    kind: &str,
-    message: &str,
-    version: Option<u32>,
-) {
-    let payload = serde_json::json!({
-        "provider": provider,
-        "kind": kind,
-        "message": message,
-        "version": version,
-    });
-    let _ = app.emit_to("main", "adapter://notice", payload);
-}
-
-async fn refresh_one(app: &tauri::AppHandle, provider: &str, allow_downgrade: bool) {
-    let before_cache_version = overlay_version(provider);
-    hydrate_from_cache(app, provider);
-    if overlay_version(provider) > before_cache_version {
-        let _ = crate::webviews::push_engine_and_adapter(app, provider);
-    }
-
-    let base = settings::adapter_base_url(app).unwrap_or_default();
-    let url = match build_source_url(base.as_deref(), provider) {
-        Ok(url) => url,
-        Err(err) => {
-            if allow_downgrade {
-                emit_notice(app, provider, "fetch-failed", &err, None);
-            }
-            return;
-        }
-    };
-
-    let text = match fetch_adapter_text(&url).await {
-        Ok(text) => text,
-        Err(_err) => {
-            if allow_downgrade {
-                #[cfg(debug_assertions)]
-                eprintln!("adapter fetch failed for {provider}: {_err}");
-                emit_notice(app, provider, "fetch-failed", "network or HTTP error", None);
-            }
-            return;
-        }
-    };
-
-    let adapter = match serde_json::from_str::<Adapter>(&text)
-        .map_err(|error| error.to_string())
-        .and_then(|adapter| {
-            validate_downloaded_adapter(provider, &adapter)?;
-            Ok(adapter)
-        }) {
-        Ok(adapter) => adapter,
-        Err(err) => {
-            if allow_downgrade {
-                emit_notice(app, provider, "validation-failed", &err, None);
-            }
-            return;
-        }
-    };
-    let Some(kind) = apply_decision(
-        adapter.adapter_version,
-        current_version(provider),
-        allow_downgrade,
-    ) else {
-        return;
-    };
-
-    let version = adapter.adapter_version;
-    if let Ok(path) = cache_path(app, provider) {
-        let _ = settings::write_atomic(&path, text.as_bytes());
-    }
-    set_override(provider, adapter);
-    let _ = crate::webviews::push_engine_and_adapter(app, provider);
-    emit_notice(app, provider, kind, "", Some(version));
-}
-
-pub async fn refresh_all_adapters(app: tauri::AppHandle, allow_downgrade: bool) {
-    let _guard = refresh_lock().lock().await;
-    for provider in all_provider_states() {
-        refresh_one(&app, &provider, allow_downgrade).await;
-    }
 }
 
 fn login_url_matches(login: &str, url: &tauri::Url) -> bool {
@@ -742,7 +438,7 @@ mod tests {
         assert!(!hosts.contains(&"auth.openai.com".to_string()));
         assert!(!hosts.contains(&"auth0.openai.com".to_string()));
 
-        for provider in ["chatgpt", "claude", "gemini", "grok", "meta"] {
+        for provider in ["chatgpt", "gemini", "grok"] {
             assert!(!app_hosts_for_provider(provider).unwrap().is_empty());
         }
     }
@@ -817,40 +513,6 @@ mod tests {
     }
 
     #[test]
-    fn downloaded_adapters_can_change_automation_inside_bundled_url_scopes() {
-        let mut adapter = adapters().get("chatgpt").unwrap().clone();
-        adapter.adapter_version += 1;
-        adapter.urls.app = "https://chatgpt.com/c/new".into();
-        adapter.urls.match_patterns = vec!["https://chatgpt.com/c".into()];
-        adapter.input_selectors.insert(0, "[data-new-input]".into());
-
-        validate_downloaded_adapter("chatgpt", &adapter).unwrap();
-    }
-
-    #[test]
-    fn downloaded_adapters_cannot_expand_provider_or_sso_scopes() {
-        let bundled = adapters().get("chatgpt").unwrap();
-
-        let mut app_host = bundled.clone();
-        app_host.urls.app = "https://example.com".into();
-        assert!(validate_downloaded_adapter("chatgpt", &app_host)
-            .unwrap_err()
-            .contains("urls.app expands"));
-
-        let mut match_host = bundled.clone();
-        match_host.urls.match_patterns.push("example.com/*".into());
-        assert!(validate_downloaded_adapter("chatgpt", &match_host)
-            .unwrap_err()
-            .contains("urls.match expands"));
-
-        let mut sso_path = bundled.clone();
-        sso_path.urls.sso_match = vec!["www.google.com/*".into()];
-        assert!(validate_downloaded_adapter("chatgpt", &sso_path)
-            .unwrap_err()
-            .contains("urls.ssoMatch expands"));
-    }
-
-    #[test]
     fn adapter_url_scopes_reject_credentials_ports_queries_and_non_https() {
         for value in [
             "http://chatgpt.com",
@@ -881,9 +543,6 @@ mod tests {
             ("chatgpt", "https://auth0.openai.com/u/login"),
             ("chatgpt", "https://gsi.google.com/client"),
             ("chatgpt", "https://www.google.com/accounts/ServiceLogin"),
-            ("claude", "https://auth.anthropic.com/login"),
-            ("claude", "https://gsi.google.com/client"),
-            ("claude", "https://www.google.com/accounts/ServiceLogin"),
             (
                 "gemini",
                 "https://www.google.com/sorry/index?continue=https%3A%2F%2Fgemini.google.com%2Fapp",
@@ -898,7 +557,6 @@ mod tests {
             ("grok", "https://accounts.google.com/o/oauth2/v2/auth"),
             ("grok", "https://accounts.google.de/ServiceLogin"),
             ("chatgpt", "https://accounts.google.com.tw/accounts/SetSID"),
-            ("claude", "https://accounts.google.com.tw/accounts/SetSID"),
             ("grok", "https://accounts.google.com.tw/accounts/SetSID"),
             (
                 "grok",
@@ -908,13 +566,6 @@ mod tests {
             ("grok", "https://auth.grokipedia.com/login"),
             ("grok", "https://gsi.google.com/client"),
             ("grok", "https://www.google.com/accounts/ServiceLogin"),
-            ("meta", "https://auth.meta.com/login"),
-            ("meta", "https://auth.meta.ai/login"),
-            ("meta", "https://www.facebook.com/login.php"),
-            ("meta", "https://m.facebook.com/login.php"),
-            ("meta", "https://facebook.com/login"),
-            ("meta", "https://www.instagram.com/accounts/login"),
-            ("meta", "https://instagram.com/accounts/login"),
         ] {
             let url = tauri::Url::parse(value).unwrap();
             assert!(
@@ -930,7 +581,6 @@ mod tests {
             ("chatgpt", "https://auth.openai.com.evil.net/"),
             ("chatgpt", "http://auth.openai.com/"),
             ("grok", "https://grok.community/"),
-            ("claude", "https://auth.openai.com/authorize"),
             ("grok", "http://accounts.google.com/"),
             ("grok", "https://accounts.google.evil.com/"),
             ("grok", "https://accounts.google.net/"),
@@ -948,17 +598,7 @@ mod tests {
             ("gemini", "https://www.google.com.evil.net/sorry"),
             ("gemini", "http://www.google.com/sorry"),
             ("chatgpt", "https://www.google.com/sorry/index"),
-            ("claude", "https://www.google.com/sorry/index"),
             ("grok", "https://www.google.com/sorry/index"),
-            ("meta", "https://auth.meta.com.evil.net/login"),
-            ("meta", "https://auth.meta.ai.evil.net/login"),
-            ("meta", "http://auth.meta.com/login"),
-            ("meta", "https://auth.meta.com:8443/login"),
-            ("meta", "https://user:pass@auth.meta.com/login"),
-            ("meta", "http://www.facebook.com/login"),
-            ("meta", "https://www.facebook.com.evil.net/login"),
-            ("meta", "https://facebook.com.evil.net/login"),
-            ("meta", "https://www.instagram.com.evil.net/accounts/login"),
         ] {
             let url = tauri::Url::parse(value).unwrap();
             assert!(
@@ -990,12 +630,6 @@ mod tests {
                 "http://chatgpt.com/c/123",
             ),
             (
-                "claude",
-                "https://claude.ai/login",
-                "https://claude.ai/new",
-                "http://claude.ai/new",
-            ),
-            (
                 "gemini",
                 "https://gemini.google.com/app",
                 "https://gemini.google.com/app/123",
@@ -1006,12 +640,6 @@ mod tests {
                 "https://grok.com",
                 "https://grok.com/chat/123",
                 "http://grok.com/chat/123",
-            ),
-            (
-                "meta",
-                "https://www.meta.ai",
-                "https://www.meta.ai/chat/123",
-                "http://www.meta.ai/chat/123",
             ),
         ] {
             let login = tauri::Url::parse(login).unwrap();
@@ -1032,86 +660,5 @@ mod tests {
                 "{provider} http denied"
             );
         }
-    }
-
-    #[test]
-    fn meta_initial_seed_is_registered_and_keeps_navigation_narrow() {
-        let meta = adapters().get("meta").expect("Meta adapter is bundled");
-        assert_eq!(meta.display_name, "Meta AI");
-        assert_eq!(meta.adapter_version, 3);
-        assert_eq!(meta.urls.app, "https://www.meta.ai");
-        assert_eq!(meta.urls.login, "https://www.meta.ai");
-        assert_eq!(
-            meta.urls.match_patterns,
-            vec!["www.meta.ai/*".to_string(), "meta.ai/*".to_string()]
-        );
-        assert_eq!(
-            meta.urls.sso_match,
-            vec![
-                "auth.meta.com/*".to_string(),
-                "auth.meta.ai/*".to_string(),
-                "www.facebook.com/*".to_string(),
-                "m.facebook.com/*".to_string(),
-                "facebook.com/*".to_string(),
-                "www.instagram.com/*".to_string(),
-                "instagram.com/*".to_string(),
-            ]
-        );
-        let hosts = app_hosts_for_provider("meta").unwrap();
-        assert!(hosts.contains(&"www.meta.ai".to_string()));
-        assert!(hosts.contains(&"meta.ai".to_string()));
-        assert!(!hosts.contains(&"www.facebook.com".to_string()));
-        assert!(!hosts.contains(&"facebook.com".to_string()));
-        assert!(!hosts.contains(&"instagram.com".to_string()));
-
-        for value in [
-            "https://www.meta.ai/",
-            "https://www.meta.ai/chat/123?source=history",
-            "https://meta.ai/",
-            "https://meta.ai/chat/123",
-        ] {
-            let url = tauri::Url::parse(value).unwrap();
-            assert!(url_allowed_for_provider("meta", &url).unwrap(), "{value}");
-        }
-
-        for value in [
-            "https://meta.ai.evil.net/",
-            "https://www.meta.ai.evil.net/",
-            "http://www.meta.ai/",
-            "https://www.meta.ai:8443/",
-            "https://user:pass@www.meta.ai/",
-        ] {
-            let url = tauri::Url::parse(value).unwrap();
-            assert!(!url_allowed_for_provider("meta", &url).unwrap(), "{value}");
-        }
-    }
-
-    #[test]
-    fn source_url_defaults_to_repo() {
-        assert_eq!(
-            build_source_url(None, "chatgpt").unwrap(),
-            "https://raw.githubusercontent.com/TED-H-com/multi-ai-chat-desktop/main/adapters/chatgpt.json"
-        );
-    }
-
-    #[test]
-    fn source_url_uses_custom_base_and_trims_slash() {
-        assert_eq!(
-            build_source_url(Some("https://example.com/a/"), "grok").unwrap(),
-            "https://example.com/a/grok.json"
-        );
-    }
-
-    #[test]
-    fn source_url_rejects_non_https() {
-        assert!(build_source_url(Some("http://example.com"), "grok").is_err());
-    }
-
-    #[test]
-    fn apply_decision_gates_versions() {
-        assert_eq!(apply_decision(5, 3, false), Some("updated"));
-        assert_eq!(apply_decision(3, 3, false), None);
-        assert_eq!(apply_decision(2, 3, false), None);
-        assert_eq!(apply_decision(2, 3, true), Some("downgraded"));
     }
 }

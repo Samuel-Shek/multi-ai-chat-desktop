@@ -53,7 +53,7 @@ describe('conversation sessions', () => {
       mode: 'consult',
       now: 123,
       messages: [
-        { id: 'ai-1', role: 'ai', content: 'AI preface', provider: 'claude' },
+        { id: 'ai-1', role: 'ai', content: 'AI preface', provider: 'grok' },
         { id: 'user-1', role: 'user', content: firstUserContent, authorLabel: ' You ' },
         { id: 'user-2', role: 'user', content: 'Do not use this title' },
       ],

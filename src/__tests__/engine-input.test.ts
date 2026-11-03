@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import chatgptAdapterSeed from '../../adapters/chatgpt.json';
-import claudeAdapterSeed from '../../adapters/claude.json';
 import grokAdapterSeed from '../../adapters/grok.json';
 import type { AIProvider, BridgeMessage } from '../../shared/types';
 
@@ -27,13 +26,6 @@ const GROK_TEXTAREA_SELECTORS = [
   'textarea[aria-label="Ask Grok anything"]',
   '[data-testid="chat-input"] textarea',
 ] as const;
-const META_INPUT_SELECTOR = 'input[aria-label="Ask Meta AI"]';
-const META_TEXTAREA_SELECTOR = 'textarea[data-ecto-composer-prehydration-input]';
-const META_SEND_BUTTON_SELECTOR = '[data-testid="composer-send-button"]';
-const META_STOP_BUTTON_SELECTOR = '[data-testid="composer-stop-button"]';
-const META_INERT_INPUT_SELECTOR = '[inert] input[aria-label="Ask Meta AI"]';
-const META_INERT_TEXTAREA_SELECTOR = '[inert] textarea[data-ecto-composer-prehydration-input]';
-
 type InputStrategyName = 'default' | 'prosemirror-paste' | 'quill-angular';
 type SendStrategy = 'click' | 'enter';
 type TestDetector = string | { selector: string; textIncludes?: string; textExcludes?: string };
@@ -81,21 +73,6 @@ function grokAdapterWithoutTextarea(overrides: Partial<TestAdapter> = {}): Parti
   };
 }
 
-function metaAdapter(overrides: Partial<TestAdapter> = {}): Partial<TestAdapter> {
-  return {
-    provider: 'meta',
-    inputSelectors: [META_INPUT_SELECTOR, META_TEXTAREA_SELECTOR],
-    sendButtonSelectors: [META_SEND_BUTTON_SELECTOR, 'button[aria-label="Send"]'],
-    responseSelectors: ['[data-message-item]:not([data-user-message])', '[data-testid="assistant-message"]'],
-    loginDetectors: [META_INPUT_SELECTOR, META_TEXTAREA_SELECTOR, 'button[aria-label="Send"]'],
-    loggedOutDetectors: [META_INERT_INPUT_SELECTOR, META_INERT_TEXTAREA_SELECTOR, '[data-testid="login-button"]'],
-    thinkingDetectors: [META_STOP_BUTTON_SELECTOR, 'button[aria-label="Stop"]'],
-    stopButtonSelectors: [META_STOP_BUTTON_SELECTOR, 'button[aria-label="Stop"]'],
-    inputStrategy: 'default',
-    sendStrategy: 'click',
-    ...overrides,
-  };
-}
 
 describe('injected engine input hardening', () => {
   afterEach(() => {
@@ -486,328 +463,6 @@ describe('injected engine input hardening', () => {
     expect(submitted).toBe(prompt);
     expect(env.sendButton?.clickCount).toBe(1);
     expect(errorDone(env)).toBeUndefined();
-  });
-
-  it('reports Meta AI logged out while its pre-login composer remains inert', async () => {
-    const env = createEnv({ inputKind: 'input' });
-    const inertComposerSelector = '[inert] input[aria-label="Ask Meta AI"]';
-    env.detectorElements.set(inertComposerSelector, [env.input]);
-    const handler = await installEngine(env);
-
-    dispatchAdapter(handler, {
-      provider: 'meta',
-      inputSelectors: ['input[aria-label="Ask Meta AI"]'],
-      loginDetectors: ['input[aria-label="Ask Meta AI"]'],
-      loggedOutDetectors: [inertComposerSelector, '[data-testid="login-button"]'],
-    });
-
-    expect(env.emitted.at(-1)).toEqual({
-      v: 1,
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { dom: 'ready', login: 'logged_out', thinking: false, bootId: 'boot1' },
-    });
-  });
-
-  it('injects and verifies Meta AI native input composers before clicking SEND', async () => {
-    vi.useFakeTimers();
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    input.setAttribute('aria-label', 'Ask Meta AI');
-    const prompt = '請用 Meta AI 比較 **A** 與 `B`。';
-    const inputEventValues: string[] = [];
-    input.onDispatch = (event) => {
-      if (event.type === 'input') inputEventValues.push(input.value);
-    };
-    let submitted = '';
-    if (env.sendButton) {
-      env.sendButton.onClick = () => {
-        submitted = input.value;
-        input.setVisibleText('');
-      };
-    }
-    const handler = await installEngine(env);
-    dispatchAdapter(handler, { provider: 'meta' });
-
-    send(handler, prompt, 'meta');
-    await flushMicrotasks();
-
-    expect(input.value).toBe(prompt);
-    expect(inputEventValues).toEqual([prompt]);
-
-    await vi.advanceTimersByTimeAsync(PRE_SEND_DELAY_MS + SEND_RETRY_DELAY_MS + 1);
-
-    expect(submitted).toBe(prompt);
-    expect(env.sendButton?.clickCount).toBe(1);
-    expect(errorDone(env)).toBeUndefined();
-  });
-
-  it('reports Meta AI logged in when a usable composer remains beside a visible login control', async () => {
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    input.setAttribute('aria-label', 'Ask Meta AI');
-    const loginButton = new FakeElement(env.document, 'button', 'Log in');
-    loginButton.setAttribute('data-testid', 'login-button');
-    const inertPlaceholder = new FakeElement(env.document, 'textarea');
-    inertPlaceholder.inert = true;
-    inertPlaceholder.setAttribute('inert', '');
-    env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-    env.detectorElements.set('[data-testid="login-button"]', [loginButton]);
-    env.detectorElements.set(META_INERT_TEXTAREA_SELECTOR, [inertPlaceholder]);
-    const handler = await installEngine(env);
-
-    dispatchAdapter(handler, metaAdapter());
-
-    expect(env.emitted.at(-1)).toEqual({
-      v: 1,
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { dom: 'ready', login: 'logged_in', thinking: false, bootId: 'boot1' },
-    });
-  });
-
-  it('reports Meta AI logged in for an enabled visible editable guest composer and sends through it', async () => {
-    vi.useFakeTimers();
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    input.setAttribute('aria-label', 'Ask Meta AI');
-    env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-    env.detectorElements.set(META_SEND_BUTTON_SELECTOR, env.sendButton ? [env.sendButton] : []);
-    const prompt = 'guest Meta composer should send';
-    let submitted = '';
-    if (env.sendButton) {
-      env.sendButton.onClick = () => {
-        submitted = input.value;
-        input.setVisibleText('');
-      };
-    }
-    const handler = await installEngine(env);
-    dispatchAdapter(handler, metaAdapter());
-
-    expect(env.emitted.at(-1)).toEqual({
-      v: 1,
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { dom: 'ready', login: 'logged_in', thinking: false, bootId: 'boot1' },
-    });
-
-    send(handler, prompt, 'meta');
-    await flushMicrotasks();
-    await vi.advanceTimersByTimeAsync(PRE_SEND_DELAY_MS + SEND_RETRY_DELAY_MS + 1);
-
-    expect(submitted).toBe(prompt);
-    expect(env.sendButton?.clickCount).toBe(1);
-    expect(errorDone(env)).toBeUndefined();
-  });
-
-  it('reports Meta AI logged in for an enabled visible editable prehydration textarea', async () => {
-    const env = createEnv({ inputKind: 'textarea' });
-    const textarea = env.input as FakeTextAreaElement;
-    textarea.setAttribute('data-ecto-composer-prehydration-input', '');
-    env.detectorElements.set(META_TEXTAREA_SELECTOR, [textarea]);
-    const handler = await installEngine(env);
-
-    dispatchAdapter(handler, metaAdapter());
-
-    expect(env.emitted.at(-1)).toEqual({
-      v: 1,
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { dom: 'ready', login: 'logged_in', thinking: false, bootId: 'boot1' },
-    });
-  });
-
-  it.each([
-    [
-      'disabled',
-      (input: FakeInputElement) => {
-        input.disabled = true;
-        input.setAttribute('disabled', '');
-      },
-    ],
-    [
-      'readonly',
-      (input: FakeInputElement) => {
-        input.readOnly = true;
-        input.setAttribute('readonly', '');
-      },
-    ],
-    [
-      'aria-disabled',
-      (input: FakeInputElement) => {
-        input.setAttribute('aria-disabled', 'true');
-      },
-    ],
-    [
-      'aria-readonly',
-      (input: FakeInputElement) => {
-        input.setAttribute('aria-readonly', 'true');
-      },
-    ],
-    [
-      'hidden',
-      (input: FakeInputElement) => {
-        input.hidden = true;
-      },
-    ],
-    [
-      'inert',
-      (input: FakeInputElement) => {
-        input.inert = true;
-        input.setAttribute('inert', '');
-      },
-    ],
-    [
-      'inert ancestor',
-      (input: FakeInputElement, env: FakeDomEnv) => {
-        const shell = new FakeElement(env.document, 'div');
-        shell.inert = true;
-        shell.setAttribute('inert', '');
-        shell.appendChild(input);
-      },
-    ],
-  ] as const)(
-    'does not treat a %s Meta composer as a usable guest session',
-    async (kind, gate) => {
-      vi.useFakeTimers();
-      const env = createEnv({ inputKind: 'input' });
-      const input = env.input as FakeInputElement;
-      input.setAttribute('aria-label', 'Ask Meta AI');
-      gate(input, env);
-      env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-      env.detectorElements.set(META_SEND_BUTTON_SELECTOR, env.sendButton ? [env.sendButton] : []);
-      const handler = await installEngine(env);
-
-      dispatchAdapter(handler, metaAdapter());
-
-      expect(env.emitted.at(-1)).toEqual({
-        v: 1,
-        action: 'STATUS_REPORT',
-        provider: 'meta',
-        payload: { dom: 'ready', login: 'logged_out', thinking: false, bootId: 'boot1' },
-      });
-
-      send(handler, `must not use a ${kind} Meta composer`, 'meta');
-      await vi.advanceTimersByTimeAsync(INPUT_SELECTOR_TIMEOUT_MS);
-      await flushMicrotasks();
-
-      expect(input.value).toBe('');
-      expect(input.events).not.toContain('input');
-      expect(env.sendButton?.clickCount).toBe(0);
-      expect(errorDone(env)?.payload).toBe('[Error: meta input element not found]');
-    },
-  );
-
-  it('does not treat a Meta send button as guest-usable when the composer is gated', async () => {
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    input.setAttribute('aria-label', 'Ask Meta AI');
-    input.disabled = true;
-    input.setAttribute('disabled', '');
-    env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-    env.detectorElements.set(META_SEND_BUTTON_SELECTOR, env.sendButton ? [env.sendButton] : []);
-    env.detectorElements.set('button[aria-label="Send"]', env.sendButton ? [env.sendButton] : []);
-    const handler = await installEngine(env);
-
-    dispatchAdapter(handler, metaAdapter());
-
-    expect(env.emitted.at(-1)).toEqual({
-      v: 1,
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { dom: 'ready', login: 'logged_out', thinking: false, bootId: 'boot1' },
-    });
-  });
-
-  it('reports Meta AI blocked for a challenge and refuses send without mutating the composer', async () => {
-    vi.useFakeTimers();
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    input.setAttribute('aria-label', 'Ask Meta AI');
-    env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-    env.cloudflareChallenge = true;
-    const handler = await installEngine(env);
-
-    dispatchAdapter(handler, metaAdapter());
-
-    expect(env.emitted.at(-1)).toEqual({
-      v: 1,
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { dom: 'ready', login: 'blocked', thinking: false, bootId: 'boot1' },
-    });
-
-    send(handler, 'must not land on a blocked Meta composer', 'meta');
-    await vi.advanceTimersByTimeAsync(PRE_SEND_DELAY_MS + SEND_RETRY_DELAY_MS);
-
-    expect(input.value).toBe('');
-    expect(env.sendButton?.clickCount).toBe(0);
-    expect(errorDone(env)?.payload).toBe('[Error: meta security challenge is active]');
-  });
-
-  it('does not treat a Meta stop control as proof of an editable composer', async () => {
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    input.setAttribute('aria-label', 'Ask Meta AI');
-    env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-    const handler = await installEngine(env);
-    dispatchAdapter(handler, metaAdapter());
-
-    expect(env.emitted.at(-1)).toMatchObject({
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { login: 'logged_in', thinking: false },
-    });
-
-    env.detectorElements.set(META_INPUT_SELECTOR, []);
-    env.detectorElements.set(META_STOP_BUTTON_SELECTOR, [new FakeElement(env.document, 'button')]);
-    handler({ v: 1, action: 'CHECK_STATUS', provider: 'meta' } as BridgeMessage);
-
-    expect(env.emitted.at(-1)).toEqual({
-      v: 1,
-      action: 'STATUS_REPORT',
-      provider: 'meta',
-      payload: { dom: 'ready', login: 'logged_out', thinking: true, bootId: 'boot1' },
-    });
-  });
-
-  it('refuses Meta activation when the composer becomes readonly after draft staging', async () => {
-    vi.useFakeTimers();
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-    env.detectorElements.set(META_SEND_BUTTON_SELECTOR, env.sendButton ? [env.sendButton] : []);
-    const handler = await installEngine(env);
-    dispatchAdapter(handler, metaAdapter());
-
-    send(handler, 'draft before composer locks', 'meta');
-    await flushMicrotasks();
-    expect(input.value).toBe('draft before composer locks');
-    input.readOnly = true;
-    await vi.advanceTimersByTimeAsync(PRE_SEND_DELAY_MS + INPUT_SELECTOR_TIMEOUT_MS + 1);
-
-    expect(env.sendButton?.clickCount).toBe(0);
-    expect(keyEventCount(input)).toBe(0);
-    expect(errorDone(env)?.payload).toBe('[Error: meta input disappeared before send]');
-  });
-
-  it('clicks Meta AI stop when the host stops the provider', async () => {
-    vi.useFakeTimers();
-    const env = createEnv({ inputKind: 'input' });
-    const input = env.input as FakeInputElement;
-    input.setAttribute('aria-label', 'Ask Meta AI');
-    env.detectorElements.set(META_INPUT_SELECTOR, [input]);
-    const stopButton = new FakeElement(env.document, 'button');
-    env.detectorElements.set(META_STOP_BUTTON_SELECTOR, [stopButton]);
-    const handler = await installEngine(env);
-    dispatchAdapter(handler, metaAdapter());
-
-    send(handler, 'long-running Meta request', 'meta');
-    await flushMicrotasks();
-    const engine = (window as unknown as { __MAC_ENGINE__?: { stop?: () => void } }).__MAC_ENGINE__;
-    engine?.stop?.();
-
-    expect(stopButton.clickCount).toBe(1);
   });
 
   it('fills the current Grok textarea without clicking SEND', async () => {
@@ -3407,9 +3062,9 @@ describe('injected engine input hardening', () => {
     const env = createEnv({ inputKind: 'textarea' });
     const prompt = `UNIQUE_PROMPT_TOKEN ${'x'.repeat(5000)}`;
     const handler = await installEngine(env);
-    dispatchAdapter(handler, { provider: 'meta', inputSelectors: ['#editor'], inputStrategy: 'default' });
+    dispatchAdapter(handler, { provider: 'gemini', inputSelectors: ['#editor'], inputStrategy: 'default' });
 
-    send(handler, prompt, 'meta');
+    send(handler, prompt, 'gemini');
     for (let step = 0; step < 8; step += 1) await flushMicrotasks();
 
     expect(env.titleEmits).toEqual([
@@ -3437,7 +3092,7 @@ describe('injected engine input hardening', () => {
     const env = createEnv({ inputKind: 'contenteditable' });
     const prompt = 'UNIQUE_PROMPT_TOKEN';
     const handler = await installEngine(env);
-    dispatchAdapter(handler, { provider: 'meta', inputSelectors: ['#editor'], inputStrategy: 'default' });
+    dispatchAdapter(handler, { provider: 'gemini', inputSelectors: ['#editor'], inputStrategy: 'default' });
     // The real bridge applies the frame on titleEmitChain's next microtask, not in the caller.
     const bridge = macBridge();
     const record = bridge.emitTitle.bind(bridge);
@@ -3454,7 +3109,7 @@ describe('injected engine input hardening', () => {
       throw new Error('wedged in execCommand');
     };
 
-    send(handler, prompt, 'meta');
+    send(handler, prompt, 'gemini');
     await flushMicrotasks();
 
     expect(titleEmitsAtMutation).toEqual([
@@ -3556,7 +3211,7 @@ describe('injected engine input hardening', () => {
     const env = createEnv({ inputKind: 'contenteditable' });
     const prompt = 'UNIQUE_PROMPT_TOKEN must not land';
     const handler = await installEngine(env);
-    dispatchAdapter(handler, { provider: 'meta', inputSelectors: ['#editor'], inputStrategy: 'default' });
+    dispatchAdapter(handler, { provider: 'grok', inputSelectors: ['#editor'], inputStrategy: 'default' });
     const bridge = macBridge();
     const record = bridge.emitTitle.bind(bridge);
     bridge.emitTitle = (action, payload, options) => {
@@ -3572,7 +3227,7 @@ describe('injected engine input hardening', () => {
       execCommandRan = true;
     };
 
-    send(handler, prompt, 'meta');
+    send(handler, prompt, 'grok');
     await flushMicrotasks();
     await vi.advanceTimersByTimeAsync(PRE_SEND_DELAY_MS);
 
@@ -3580,7 +3235,7 @@ describe('injected engine input hardening', () => {
     expect(env.input.textContent).toBe('');
     expect(
       env.emitted.filter(
-        (message) => message.action === 'RESPONSE_DONE' && message.payload === '[Error: meta security challenge is active]',
+        (message) => message.action === 'RESPONSE_DONE' && message.payload === '[Error: grok security challenge is active]',
       ),
     ).toHaveLength(1);
     expect(env.titleEmits).toEqual([
@@ -3677,77 +3332,6 @@ describe('injected engine input hardening', () => {
     expect(env.document.querySelector('a[href^="/sign-in"]')).toBeNull();
     expect(env.document.querySelector('a[href*="sign-in"]')).toBe(link);
     expectGrokLogin(env, 'logged_in');
-  });
-
-  it.each(['cds', 'legacy'] as const)('captures only the Claude %s reply after streaming ends', async (layout) => {
-    vi.useFakeTimers();
-    const env = createEnv({ inputKind: 'contenteditable' });
-    mountProseMirrorComposer(env);
-    env.sendButton?.setAttribute('aria-label', 'Send message');
-    appendClaudeReply(env, layout, 'Earlier reply');
-    let reply: ReturnType<typeof appendClaudeReply> | undefined;
-    if (env.sendButton) env.sendButton.onClick = () => {
-      env.input.replaceChildren();
-      env.input.setVisibleText('');
-      const user = new FakeElement(env.document, 'div', 'Current prompt');
-      user.setAttribute('class', 'cds-user-message-body');
-      env.document.body.appendChild(user);
-      reply = appendClaudeReply(env, layout, 'Partial answer');
-      reply.turn.setAttribute('data-is-streaming', 'true');
-    };
-    const handler = await installEngine(env);
-    dispatchAdapter(handler, { ...claudeAdapterSeed, provider: 'claude', inputStrategy: 'prosemirror-paste', sendStrategy: 'click' });
-
-    send(handler, 'Current prompt', 'claude');
-    await flushMicrotasks();
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect(env.sendButton?.clickCount).toBe(1);
-    expect(reply).toBeDefined();
-    expect(env.emitted.filter(message => message.action === 'RESPONSE_DONE')).toHaveLength(0);
-    expect(env.emitted).toContainEqual({ v: 1, action: 'RESPONSE_CHUNK', provider: 'claude', payload: 'Partial answer' });
-    reply!.text.setVisibleText('Complete answer');
-    reply!.turn.setAttribute('data-is-streaming', 'false');
-    FakeMutationObserver.notify();
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect(env.emitted.filter(message => message.action === 'RESPONSE_DONE')).toEqual([
-      { v: 1, action: 'RESPONSE_DONE', provider: 'claude', payload: 'Complete answer' },
-    ]);
-    const payloads = env.emitted.filter(message => ['RESPONSE_CHUNK', 'RESPONSE_DONE'].includes(message.action));
-    expect(payloads.every(message => ['Partial answer', 'Complete answer'].includes(String(message.payload)))).toBe(true);
-  });
-
-  it('does not treat Claude user prose or tool status as an assistant reply', async () => {
-    vi.useFakeTimers();
-    const env = createEnv({ inputKind: 'contenteditable' });
-    mountProseMirrorComposer(env);
-    env.sendButton?.setAttribute('aria-label', 'Send message');
-    if (env.sendButton) env.sendButton.onClick = () => {
-      env.input.replaceChildren();
-      env.input.setVisibleText('');
-      const user = new FakeElement(env.document, 'div');
-      user.setAttribute('data-cds', 'UserMessage');
-      const prose = new FakeElement(env.document, 'div', 'User content');
-      prose.setAttribute('data-perf-reply-text', '');
-      user.appendChild(prose);
-      env.document.body.appendChild(user);
-      const turn = new FakeElement(env.document, 'div');
-      turn.setAttribute('data-cds', 'AssistantMessage');
-      const status = new FakeElement(env.document, 'div', 'Searched the web');
-      status.setAttribute('data-cds', 'TurnStatus');
-      turn.appendChild(status);
-      env.document.body.appendChild(turn);
-    };
-    const handler = await installEngine(env);
-    dispatchAdapter(handler, { ...claudeAdapterSeed, provider: 'claude', inputStrategy: 'prosemirror-paste', sendStrategy: 'click' });
-
-    send(handler, 'Current prompt', 'claude');
-    await flushMicrotasks();
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect(env.sendButton?.clickCount).toBe(1);
-    expect(env.emitted.filter(message => ['RESPONSE_CHUNK', 'RESPONSE_DONE'].includes(message.action))).toEqual([]);
   });
 
   it('confirms a ChatGPT Chat/Work send from the user-message bubble without a second click', async () => {
@@ -4187,26 +3771,6 @@ const CHAT_WORK_SETTLE_MS =
   CHATGPT_TERMINAL_SAMPLE_INTERVAL_MS +
   1_000;
 
-// Structural fixture only: new CDS reply body, surrounding status, and action controls.
-// Provenance: infinitr0us/chat-md-exporter, tests/fixtures/claude-2026-10-sample.html
-// at 3ee09d9d39600adf8c592637e91cdbd9ae32769d (synthetic; not a live login test).
-function appendClaudeReply(env: FakeDomEnv, layout: 'cds' | 'legacy', answer: string) {
-  const turn = new FakeElement(env.document, 'div');
-  turn.setAttribute('data-is-streaming', 'false');
-  if (layout === 'cds') turn.setAttribute('data-cds', 'AssistantMessage');
-  const status = new FakeElement(env.document, 'div', 'Searched the web');
-  status.setAttribute('data-cds', 'TurnStatus');
-  turn.appendChild(status);
-  const text = new FakeElement(env.document, 'div', answer);
-  if (layout === 'cds') text.setAttribute('data-perf-reply-text', '');
-  else text.setAttribute('class', 'font-claude-response');
-  turn.appendChild(text);
-  const actions = new FakeElement(env.document, 'div', 'Copy Retry');
-  actions.setAttribute('data-cds', 'MessageActions');
-  turn.appendChild(actions);
-  env.document.body.appendChild(turn);
-  return { turn, text };
-}
 
 function bundledChatGptAdapter(overrides: Partial<TestAdapter> = {}): Partial<TestAdapter> {
   return {

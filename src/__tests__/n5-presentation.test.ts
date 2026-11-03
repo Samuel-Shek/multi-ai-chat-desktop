@@ -20,7 +20,7 @@ import {
 } from '../ui/presentationCommands';
 import { mergeSettings, normalizeSettings } from '../ui/settingsModel';
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
 
 function state(provider: AIProvider, webview: ProviderState['webview'] = 'loaded'): ProviderState {
   return {
@@ -66,7 +66,7 @@ describe('N5 webview presentation model', () => {
   it('defaults the active four providers to side and Meta AI to standby chip presentation', () => {
     const presentation = defaultPresentation();
 
-    expect(presentation).toEqual({ chatgpt: 'side', claude: 'side', gemini: 'side', grok: 'side', meta: 'chip' });
+    expect(presentation).toEqual({ chatgpt: 'side', grok: 'side', gemini: 'side' });
     expect(sideProviders(presentation, providers)).toEqual(providers);
     expect(chipProviders(presentation, providers)).toEqual([]);
     expect(centerPresentationProvider(presentation)).toBeUndefined();
@@ -77,7 +77,7 @@ describe('N5 webview presentation model', () => {
 
     presentation = setProviderPresentation(presentation, 'chatgpt', 'chip');
     expect(chipProviders(presentation, providers)).toEqual(['chatgpt']);
-    expect(sideProviders(presentation, providers)).toEqual(['claude', 'gemini', 'grok']);
+    expect(sideProviders(presentation, providers)).toEqual(['grok', 'gemini']);
 
     presentation = setProviderPresentation(presentation, 'chatgpt', 'center');
     expect(chipProviders(presentation, providers)).toEqual([]);
@@ -90,22 +90,22 @@ describe('N5 webview presentation model', () => {
 
   it('keeps only one provider in center and computes center-hidden side webviews', () => {
     let presentation = setProviderPresentation(defaultPresentation(), 'chatgpt', 'center');
-    presentation = setProviderPresentation(presentation, 'claude', 'center');
+    presentation = setProviderPresentation(presentation, 'grok', 'center');
 
-    expect(presentation).toEqual({ chatgpt: 'side', claude: 'center', gemini: 'side', grok: 'side', meta: 'chip' });
-    expect(centerHiddenProviders(presentation, states({ grok: state('grok', 'none') }), new Set<AIProvider>(['gemini']), providers)).toEqual([
+    expect(presentation).toEqual({ chatgpt: 'side', grok: 'center', gemini: 'side' });
+    expect(centerHiddenProviders(presentation, states({ gemini: state('gemini', 'none') }), new Set<AIProvider>(['gemini']), providers)).toEqual([
       'chatgpt',
     ]);
   });
 
   it('normalizes settings and filters chip providers out of restore-open membership', () => {
     const normalized = normalizeSettings({
-      openProviders: ['chatgpt', 'claude', 'gemini'],
-      presentation: { chatgpt: 'chip', claude: 'center', gemini: 'bad', grok: 'side' },
+      openProviders: ['chatgpt', 'grok', 'gemini'],
+      presentation: { chatgpt: 'chip', grok: 'center', gemini: 'bad' },
     });
 
-    expect(normalized.presentation).toEqual({ chatgpt: 'chip', claude: 'center', gemini: 'side', grok: 'side', meta: 'chip' });
-    expect(restorableOpenProviders(normalized.openProviders, normalized.presentation)).toEqual(['claude', 'gemini']);
+    expect(normalized.presentation).toEqual({ chatgpt: 'chip', grok: 'center', gemini: 'side' });
+    expect(restorableOpenProviders(normalized.openProviders, normalized.presentation)).toEqual(['grok', 'gemini']);
 
     const persisted = mergeSettings(normalized, {
       presentation: setProviderPresentation(normalized.presentation, 'gemini', 'chip'),
@@ -116,32 +116,27 @@ describe('N5 webview presentation model', () => {
   it('normalizes invalid presentation entries to side instead of fallback state', () => {
     const fallback: ReturnType<typeof defaultPresentation> = {
       chatgpt: 'chip',
-      claude: 'center',
+      grok: 'center',
       gemini: 'chip',
-      grok: 'side',
-      meta: 'chip',
     };
 
-    expect(normalizePresentation({ chatgpt: 'bad', claude: 'side', gemini: 'bad', grok: 'bad' }, fallback)).toEqual({
+    expect(normalizePresentation({ chatgpt: 'bad', grok: 'side', gemini: 'bad' }, fallback)).toEqual({
       chatgpt: 'side',
-      claude: 'side',
-      gemini: 'side',
       grok: 'side',
-      meta: 'chip',
+      gemini: 'side',
     });
   });
 
   it('hides side siblings only when the centered provider is loaded or promotion is in flight', () => {
-    const presentation = setProviderPresentation(defaultPresentation(), 'claude', 'center');
-    const centeredNotLoaded = states({ claude: state('claude', 'none') });
+    const presentation = setProviderPresentation(defaultPresentation(), 'grok', 'center');
+    const centeredNotLoaded = states({ grok: state('grok', 'none') });
 
     expect(centerHiddenProviders(presentation, centeredNotLoaded, new Set(), providers)).toEqual([]);
-    expect(centerHiddenProviders(presentation, centeredNotLoaded, new Set(), providers, new Set<AIProvider>(['claude']))).toEqual([
+    expect(centerHiddenProviders(presentation, centeredNotLoaded, new Set(), providers, new Set<AIProvider>(['grok']))).toEqual([
       'chatgpt',
       'gemini',
-      'grok',
     ]);
-    expect(centerHiddenProviders(presentation, states(), new Set(), providers)).toEqual(['chatgpt', 'gemini', 'grok']);
+    expect(centerHiddenProviders(presentation, states(), new Set(), providers)).toEqual(['chatgpt', 'gemini']);
   });
 });
 
@@ -167,14 +162,14 @@ describe('N5 webview presentation host commands', () => {
 
     await applyPresentationTransitionCommand({
       host,
-      provider: 'claude',
+      provider: 'grok',
       state: 'side',
       bounds,
       webview: 'none',
     });
 
-    expect(host.open).toHaveBeenCalledWith('claude', bounds);
-    expect(host.hide).toHaveBeenCalledWith('claude');
+    expect(host.open).toHaveBeenCalledWith('grok', bounds);
+    expect(host.hide).toHaveBeenCalledWith('grok');
     expect(host.close).not.toHaveBeenCalled();
     expect(host.show).not.toHaveBeenCalled();
     expect(host.setBounds).not.toHaveBeenCalled();
@@ -226,14 +221,14 @@ describe('N5 webview presentation host commands', () => {
 
     await applyPresentationTransitionCommand({
       host,
-      provider: 'claude',
+      provider: 'grok',
       state: 'side',
       bounds,
       webview: 'none',
       shouldContinue,
     });
 
-    expect(host.open).toHaveBeenCalledWith('claude', bounds);
+    expect(host.open).toHaveBeenCalledWith('grok', bounds);
     expect(host.hide).not.toHaveBeenCalled();
   });
 
@@ -318,50 +313,50 @@ describe('N5 webview presentation host commands', () => {
   it('drops stale center commands after a rapid chip to center to chip sequence', async () => {
     const host = commandHost();
     const frame = deferred();
-    let presentation = setProviderPresentation(defaultPresentation(), 'claude', 'chip');
+    let presentation = setProviderPresentation(defaultPresentation(), 'grok', 'chip');
     let generation = 0;
     const webview: ProviderState['webview'] = 'none';
     const mountedBounds: { current?: DOMRectReadOnly } = {};
 
     const centerGeneration = ++generation;
-    presentation = setProviderPresentation(presentation, 'claude', 'center');
+    presentation = setProviderPresentation(presentation, 'grok', 'center');
     const centerTransition = (async () => {
       const bounds = await waitForPresentationTargetBounds({
         getBounds: () => mountedBounds.current,
         waitFrame: () => frame.promise,
-        shouldContinue: () => generation === centerGeneration && presentation.claude === 'center',
+        shouldContinue: () => generation === centerGeneration && presentation.grok === 'center',
       });
       if (!bounds) return;
       await applyPresentationTransitionCommand({
         host,
-        provider: 'claude',
+        provider: 'grok',
         state: 'center',
         bounds,
         webview,
         currentWebview: () => webview,
-        shouldContinue: () => generation === centerGeneration && presentation.claude === 'center',
+        shouldContinue: () => generation === centerGeneration && presentation.grok === 'center',
       });
     })();
     await Promise.resolve();
 
     const chipGeneration = ++generation;
-    presentation = setProviderPresentation(presentation, 'claude', 'chip');
+    presentation = setProviderPresentation(presentation, 'grok', 'chip');
     await applyPresentationTransitionCommand({
       host,
-      provider: 'claude',
+      provider: 'grok',
       state: 'chip',
       bounds: rect(0, 0, 0, 0),
       webview,
       currentWebview: () => webview,
-      shouldContinue: () => generation === chipGeneration && presentation.claude === 'chip',
+      shouldContinue: () => generation === chipGeneration && presentation.grok === 'chip',
     });
 
     mountedBounds.current = rect(80, 90, 900, 520);
     frame.resolve();
     await centerTransition;
 
-    expect(presentation.claude).toBe('chip');
-    expect(host.close).toHaveBeenCalledWith('claude');
+    expect(presentation.grok).toBe('chip');
+    expect(host.close).toHaveBeenCalledWith('grok');
     expect(host.open).not.toHaveBeenCalled();
     expect(host.show).not.toHaveBeenCalled();
     expect(host.setBounds).not.toHaveBeenCalled();
@@ -379,10 +374,10 @@ describe('N5 webview presentation host commands', () => {
     };
     const guard = new OverlayGuardCounter();
     const snapshot = states();
-    const presentation = setProviderPresentation(defaultPresentation(), 'claude', 'center');
-    const centerHidden = new Set<AIProvider>(['claude']);
+    const presentation = setProviderPresentation(defaultPresentation(), 'grok', 'center');
+    const centerHidden = new Set<AIProvider>(['grok']);
 
-    guard.open(['claude'], overlayHost);
+    guard.open(['grok'], overlayHost);
     await applyCenterHiddenCommands({
       host,
       previousHidden: centerHidden,
@@ -397,11 +392,11 @@ describe('N5 webview presentation host commands', () => {
 
     expect(host.show).not.toHaveBeenCalled();
 
-    guard.reconcile(['claude'], overlayHost);
-    expect(host.hide).toHaveBeenCalledWith('claude');
+    guard.reconcile(['grok'], overlayHost);
+    expect(host.hide).toHaveBeenCalledWith('grok');
 
     guard.close(overlayHost);
-    await vi.waitFor(() => expect(host.show).toHaveBeenCalledWith('claude'));
+    await vi.waitFor(() => expect(host.show).toHaveBeenCalledWith('grok'));
     expect(host.show).toHaveBeenCalledTimes(1);
   });
 

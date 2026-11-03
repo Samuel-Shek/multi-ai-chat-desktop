@@ -66,7 +66,7 @@ vi.mock('../workflow/graph', async () => {
   };
 });
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
 const HASH = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 function state(provider: AIProvider, sendable = true): ProviderState {
@@ -153,7 +153,7 @@ describe('snapshot replay', () => {
       roleMap: { ...DEFAULT_ROUNDTABLE_ROLES },
       userQuestion: inlineRef('brainstorm question'),
       steps: [
-        step('round1_first', { provider: 'claude', input: inlineRef('brainstorm prompt'), output: inlineRef('one') }),
+        step('round1_first', { provider: 'grok', input: inlineRef('brainstorm prompt'), output: inlineRef('one') }),
         step('round1_second', { provider: 'gemini', input: inlineRef('brainstorm prompt'), output: inlineRef('two') }),
       ],
     });
@@ -253,7 +253,7 @@ describe('snapshot replay', () => {
       graphId: 'consult',
       graphVersion: 6,
       redactionTier: 'prompt-text',
-      roleMap: { first: 'chatgpt', second: 'grok', reviewer: 'claude', summary: 'gemini' },
+      roleMap: { first: 'chatgpt', second: 'grok', reviewer: 'grok', summary: 'gemini' },
       userQuestion: inlineRef('prompt text question', 'prompt-text'),
       steps: [
         step('first', {
@@ -261,7 +261,7 @@ describe('snapshot replay', () => {
           input: inlineRef(PROMPTS.consult.first('prompt text question'), 'prompt-text'),
           output: hashRef(HASH, 'prompt-text'),
         }),
-        step('reviewer', { provider: 'claude', input: inlineRef('review prompt', 'prompt-text'), output: hashRef(HASH, 'prompt-text') }),
+        step('reviewer', { provider: 'grok', input: inlineRef('review prompt', 'prompt-text'), output: hashRef(HASH, 'prompt-text') }),
       ],
     });
 
@@ -373,7 +373,7 @@ describe('snapshot replay', () => {
   });
 
   it('uses the current four-provider lineup when Meta AI is active during replay', async () => {
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'gemini'];
     vi.mocked(host.connections.get).mockResolvedValue([
       ...activeProviders.map((provider) => state(provider)),
       state('grok', false),
@@ -382,7 +382,7 @@ describe('snapshot replay', () => {
       graphId: 'free',
       graphVersion: 2,
       roleMap: {},
-      userQuestion: inlineRef('meta replay'),
+      userQuestion: inlineRef('gemini replay'),
       steps: [],
     });
 
@@ -390,13 +390,13 @@ describe('snapshot replay', () => {
 
     expect(executeGraph).toHaveBeenCalledWith(
       workflowGraphs.free,
-      { text: 'meta replay', roles: {}, targets: activeProviders },
+      { text: 'gemini replay', roles: {}, targets: activeProviders },
       { onSnapshotComplete: undefined },
     );
   });
 
   it('drops a historical free target that is now the standby provider', async () => {
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'gemini'];
     vi.mocked(host.connections.get).mockResolvedValue([
       ...activeProviders.map((provider) => state(provider)),
       state('grok'),
@@ -409,16 +409,16 @@ describe('snapshot replay', () => {
       steps: [
         step('chatgpt-answer', { provider: 'chatgpt' }),
         step('old-grok-answer', { provider: 'grok' }),
-        step('meta-answer', { provider: 'meta' }),
+        step('gemini-answer', { provider: 'gemini' }),
       ],
     });
 
     await expect(replaySnapshot({ snapshot }, { activeProviders })).resolves.toMatchObject({ ok: true });
 
-    expect(planReplay(snapshot).targets).toEqual(['chatgpt', 'grok', 'meta']);
+    expect(planReplay(snapshot).targets).toEqual(['chatgpt', 'grok', 'gemini']);
     expect(executeGraph).toHaveBeenCalledWith(
       workflowGraphs.free,
-      { text: 'historical targets', roles: {}, targets: ['chatgpt', 'meta'] },
+      { text: 'historical targets', roles: {}, targets: ['chatgpt', 'gemini'] },
       { onSnapshotComplete: undefined },
     );
   });
@@ -427,7 +427,7 @@ describe('snapshot replay', () => {
     const snapshot = buildSnapshot();
     const originalRoleMap = { ...snapshot.roleMap };
     await expect(replaySnapshot({ snapshot }, {
-      activeProviders: ['chatgpt', 'claude', 'gemini', 'meta'],
+      activeProviders: ['chatgpt', 'gemini'],
     })).resolves.toEqual({
       ok: false,
       blocked: 'preflight',
@@ -440,12 +440,12 @@ describe('snapshot replay', () => {
   });
 
   it.each(providers)('replays recorded Meta debate roles unchanged after replacing %s', async (standbyProvider) => {
-    const activeProviders = [...providers.filter((provider) => provider !== standbyProvider), 'meta' as const];
+    const activeProviders = [...providers.filter((provider) => provider !== standbyProvider), 'gemini' as const];
     const roleMap = Object.fromEntries(Object.entries(DEFAULT_DEBATE_ROLES).map(([role, provider]) =>
-      [role, provider === standbyProvider ? 'meta' : provider],
+      [role, provider === standbyProvider ? 'gemini' : provider],
     )) as Record<string, AIProvider>;
     const snapshot = buildSnapshot({ roleMap });
-    vi.mocked(host.connections.get).mockResolvedValue([...providers, 'meta' as const].map((provider) => state(provider)));
+    vi.mocked(host.connections.get).mockResolvedValue([...providers, 'gemini' as const].map((provider) => state(provider)));
 
     await expect(replaySnapshot({ snapshot }, { activeProviders })).resolves.toMatchObject({ ok: true, plan: { roles: roleMap } });
 
@@ -454,12 +454,10 @@ describe('snapshot replay', () => {
     expect(snapshot.roleMap).toEqual(roleMap);
 
     vi.mocked(host.provider.send).mockClear();
-    await expect(replaySnapshot({ snapshot }, { activeProviders: providers })).resolves.toEqual({
-      ok: false,
-      blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['meta'], aliased: [] },
+    await expect(replaySnapshot({ snapshot }, { activeProviders: providers })).resolves.toMatchObject({
+      ok: true,
+      plan: { roles: roleMap },
     });
-    expect(host.provider.send).not.toHaveBeenCalled();
     expect(planReplay(snapshot).roles).toEqual(roleMap);
   });
 
@@ -467,7 +465,7 @@ describe('snapshot replay', () => {
     const snapshot = buildSnapshot({
       steps: [
         step('pro', { output: inlineRef('prior pro output') }),
-        step('con', { provider: 'claude', input: inlineRef('con prompt'), output: inlineRef('prior con output') }),
+        step('con', { provider: 'grok', input: inlineRef('con prompt'), output: inlineRef('prior con output') }),
       ],
     });
 
@@ -550,12 +548,12 @@ describe('snapshot replay', () => {
   });
 
   it('blocks on serial preflight with current unavailable sessions and does not execute', async () => {
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude', false), state('gemini'), state('grok')]);
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok', false), state('gemini')]);
 
     await expect(replaySnapshot({ snapshot: buildSnapshot() }, {})).resolves.toEqual({
       ok: false,
       blocked: 'preflight',
-      preflight: { ok: false, unavailable: ['claude'], aliased: [] },
+      preflight: { ok: false, unavailable: ['grok'], aliased: [] },
     });
     expect(executeGraph).not.toHaveBeenCalled();
   });
@@ -611,7 +609,7 @@ describe('snapshot replay', () => {
   });
 
   it('drops free replay targets that are no longer sendable', async () => {
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude', false), state('gemini'), state('grok')]);
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok', false), state('gemini')]);
     const snapshot = buildSnapshot({
       graphId: 'free',
       graphVersion: 2,
@@ -619,7 +617,7 @@ describe('snapshot replay', () => {
       userQuestion: inlineRef('free replay sendability'),
       steps: [
         step('fanout:0', { provider: 'chatgpt', input: inlineRef('free replay sendability'), output: inlineRef('one') }),
-        step('fanout:1', { provider: 'claude', input: inlineRef('free replay sendability'), output: inlineRef('two') }),
+        step('fanout:1', { provider: 'grok', input: inlineRef('free replay sendability'), output: inlineRef('two') }),
       ],
     });
 

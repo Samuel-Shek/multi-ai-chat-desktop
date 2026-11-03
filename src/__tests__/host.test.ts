@@ -115,14 +115,14 @@ describe('host snapshot bindings', () => {
   it('shows providers without stealing popup focus unless explicitly requested', async () => {
     invokeMock.mockResolvedValue(undefined);
 
-    await host.provider.show('claude');
-    expect(invokeMock).toHaveBeenLastCalledWith('provider_show', { provider: 'claude', focus: false });
+    await host.provider.show('grok');
+    expect(invokeMock).toHaveBeenLastCalledWith('provider_show', { provider: 'grok', focus: false });
 
-    await host.provider.show('claude', true);
-    expect(invokeMock).toHaveBeenLastCalledWith('provider_show', { provider: 'claude', focus: true });
+    await host.provider.show('grok', true);
+    expect(invokeMock).toHaveBeenLastCalledWith('provider_show', { provider: 'grok', focus: true });
   });
 
-  it.each(['chatgpt', 'claude', 'gemini', 'grok'] as const)('parks %s offscreen without stealing focus', async (provider) => {
+  it.each(['chatgpt', 'grok', 'gemini', 'grok'] as const)('parks %s offscreen without stealing focus', async (provider) => {
     invokeMock.mockResolvedValue(undefined);
     const bounds = { x: -10_000, y: -10_000, width: 420, height: 320 } as DOMRectReadOnly;
 

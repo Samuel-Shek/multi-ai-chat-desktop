@@ -1,15 +1,14 @@
 import type { AIProvider } from '../../shared/types';
 import { DOCK_SLOT_PROVIDERS } from '../../shared/constants';
 
-export const SLOT_IDS = ['leftTop', 'leftBottom', 'rightTop', 'rightBottom'] as const;
+export const SLOT_IDS = ['leftTop', 'leftBottom', 'rightTop'] as const;
 export type SlotId = (typeof SLOT_IDS)[number];
 export type SlotAssignment = Record<SlotId, AIProvider>;
 
 export const DEFAULT_SLOT_ASSIGNMENT: SlotAssignment = {
   leftTop: 'chatgpt',
-  leftBottom: 'claude',
+  leftBottom: 'grok',
   rightTop: 'gemini',
-  rightBottom: 'grok',
 };
 
 export function isProviderPermutation(providers: AIProvider[]): boolean {

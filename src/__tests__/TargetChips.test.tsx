@@ -104,9 +104,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const defaultProviders: AIProvider[] = ['chatgpt', 'claude'];
+const defaultProviders: AIProvider[] = ['chatgpt', 'grok'];
 const defaultStates: Record<AIProvider, ProviderState> = {
-  meta: { provider: "meta", webview: "none", dom: "unknown", login: "unknown", thinking: false, lastStatusAt: 1 },
   chatgpt: {
     provider: 'chatgpt',
     webview: 'loaded',
@@ -115,8 +114,8 @@ const defaultStates: Record<AIProvider, ProviderState> = {
     thinking: false,
     lastStatusAt: 1,
   },
-  claude: {
-    provider: 'claude',
+  grok: {
+    provider: 'grok',
     webview: 'loaded',
     dom: 'ready',
     login: 'logged_in',
@@ -125,14 +124,6 @@ const defaultStates: Record<AIProvider, ProviderState> = {
   },
   gemini: {
     provider: 'gemini',
-    webview: 'none',
-    dom: 'unknown',
-    login: 'unknown',
-    thinking: false,
-    lastStatusAt: 1,
-  },
-  grok: {
-    provider: 'grok',
     webview: 'none',
     dom: 'unknown',
     login: 'unknown',
@@ -192,7 +183,7 @@ describe('TargetChips', () => {
     const renderer = renderTargetChips();
     const rendered = textOf(renderer.tree);
     expect(rendered).toContain(AI_PROVIDERS.chatgpt.name);
-    expect(rendered).toContain(AI_PROVIDERS.claude.name);
+    expect(rendered).toContain(AI_PROVIDERS.grok.name);
   });
 
   it('calls onChange to toggle selection when a chip is clicked', () => {
@@ -202,9 +193,9 @@ describe('TargetChips', () => {
     const buttons = findAllElements(renderer.tree, (element) => element.type === 'button');
     expect(buttons).toHaveLength(2);
 
-    // Click on 'claude' which is not selected yet
+    // Click on 'grok' which is not selected yet
     propsOf(buttons[1]).onClick?.();
-    expect(onChange).toHaveBeenCalledWith(['chatgpt', 'claude']);
+    expect(onChange).toHaveBeenCalledWith(['chatgpt', 'grok']);
   });
 
   it('disables chips when disabled prop is true', () => {
@@ -219,7 +210,7 @@ describe('TargetChips', () => {
   it('disables chips when the provider is not sendable', () => {
     const states = {
       ...defaultStates,
-      claude: { ...defaultStates.claude, dom: 'unknown' as const },
+      grok: { ...defaultStates.grok, dom: 'unknown' as const },
     };
 
     const renderer = renderTargetChips({ states });

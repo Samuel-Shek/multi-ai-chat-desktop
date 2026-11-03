@@ -1,6 +1,6 @@
 {
   "name": "multi-ai-chat-desktop",
-  "version": "0.0.0",
+  "version": "1.9.6-hardened.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.0.0",
@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "verify": "pnpm build:injected && pnpm typecheck && pnpm lint && pnpm test && pnpm agent:verify && node scripts/check-adapters.mjs"
+    "verify": "pnpm build:injected && pnpm typecheck && pnpm lint && pnpm test && pnpm agent:verify && node scripts/check-adapters.mjs && pnpm build && node scripts/check-no-remote-hosts.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

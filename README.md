@@ -1,5 +1,23 @@
 # Multi-AI Chat Desktop
 
+## Hardened fork
+
+This build is a personal fork of [TED-H-com/multi-ai-chat-desktop](https://github.com/TED-H-com/multi-ai-chat-desktop) (MIT). It is not the official app and does not share its bundle id, settings, or WebKit data.
+
+It is meant for one person on an Apple Silicon Mac, signed in to their own ChatGPT, Grok, and Gemini accounts, with the three models debating. Build it yourself with [BUILD-HARDENED.md](./BUILD-HARDENED.md). Do not install the upstream DMG if you want these limits.
+
+What changed, and why:
+
+- **No runtime remote control.** Startup, the six-hour timer, and settings changes no longer download adapters. There is no adapter cache and no remote adapter URL, so an old cached file cannot override the JSON compiled into the app. The GitHub update check is gone, and the control pane is not allowed to connect to `api.github.com`. `reqwest` and `tauri-plugin-updater` are not dependencies.
+- **Diagnostics stay on the Mac.** "Report issue" copies the structural digest to the clipboard. It does not open a GitHub issue URL, so the digest is not placed in a request.
+- **Three providers.** ChatGPT, Grok, and Gemini only. Claude and Meta AI are removed from types, settings, adapters, slots, roles, the UI, and tests.
+- **Separate macOS logins.** Each provider webview, including its login popups, uses a fixed WKWebView data store identifier. That API needs **macOS 14 or later**. `data_directory` does not isolate WKWebView profiles. Logins stay in those stores across restarts. This was not verified on a Mac in this change; see the pull request for the on-device check.
+- **Debate still runs.** The default is ChatGPT for, Grok against, and Gemini as both judge and summary. Settings can change the roles. Consult's two opening answers still have to be different providers because they run at the same time.
+- **A different app identity.** Bundle id `com.samuelshek.multiaichat.hardened`, product name **Multi-AI Chat Hardened**, version `1.9.6-hardened.1`. It will not read or write `com.tedh.multiaichat`.
+- **Conversation text is not saved unless you turn that on.** The default is off and is labelled as off in Settings. The in-memory transcript for the current session still works. Snapshots stay a separate opt-in.
+
+The sections below describe the upstream project. Where they mention four or five providers, remote adapter updates, or the official download, this fork does not do that.
+
 **English** · [繁體中文](./README.zh-TW.md) · [日本語](./README.ja.md) · [Deutsch](./README.de.md)
 
 Ask once. Let four signed-in AI web sessions answer, review, challenge, and refine one another. **ChatGPT, Claude, Gemini, and Grok remain the default lineup; Meta AI is an experimental fifth standby option in Settings.** Multi-AI Chat Desktop is a Tauri 2 workflow hub, not four chat windows placed side by side.

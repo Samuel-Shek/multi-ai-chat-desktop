@@ -74,7 +74,7 @@ describe('M4c share export helpers', () => {
     expect(content).toContain('> Latest snapshot: snapshot-export');
     expect(content).toContain('> Latest run app version: 1.0.1');
     expect(content).toContain('> Latest run (UTC): 2026-07-04T13:40:00.000Z → 2026-07-04T13:44:00.000Z');
-    expect(content).toContain(`> Adapter versions: ${AI_PROVIDERS.chatgpt.name} v7, ${AI_PROVIDERS.claude.name} v8`);
+    expect(content).toContain(`> Adapter versions: ${AI_PROVIDERS.chatgpt.name} v7, ${AI_PROVIDERS.grok.name} v8`);
   });
 
   it('only attaches the latest snapshot to its own conversation question', () => {
@@ -107,7 +107,7 @@ function buildSnapshot(): ExecutionSnapshot {
     appVersion: '1.0.1',
     createdAt: '2026-07-04T13:40:00.000Z',
     completedAt: '2026-07-04T13:44:00.000Z',
-    adapterVersions: { chatgpt: 7, claude: 8 },
+    adapterVersions: { chatgpt: 7, grok: 8 },
     roleMap: {},
     redactionTier: 'full-local',
     userQuestion: { tier: 'full-local', kind: 'inline', text: 'question' },

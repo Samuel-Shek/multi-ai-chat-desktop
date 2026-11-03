@@ -32,6 +32,7 @@ export interface ConversationSession {
 export interface ConversationSessionStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 export interface ConversationSessionSaveResult {
@@ -257,6 +258,20 @@ export function removeConversationSession(
   sessionId: string,
 ): ConversationSession[] {
   return normalizeConversationSessions(sessions.filter((session) => session.id !== sessionId));
+}
+
+export function clearConversationSessions(storage?: ConversationSessionStorage): void {
+  const target = storage ?? defaultStorage();
+  if (!target) return;
+  try {
+    if (typeof target.removeItem === 'function') {
+      target.removeItem(CONVERSATION_SESSIONS_STORAGE_KEY);
+      return;
+    }
+    target.setItem(CONVERSATION_SESSIONS_STORAGE_KEY, '[]');
+  } catch {
+    // Clearing local history is best-effort. A failed clear must not throw into the UI.
+  }
 }
 
 export function loadConversationSessions(storage?: ConversationSessionStorage): ConversationSession[] {

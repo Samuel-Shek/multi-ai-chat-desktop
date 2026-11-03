@@ -59,7 +59,7 @@ control pane（local origin webview，full IPC 權限）跑 TypeScript workflow 
 
 ### D6: Session 持久化 ✅ 定稿
 - **Windows**：每 provider 一個獨立 profile，`WebviewBuilder::data_directory(<app-data>/webviews/<provider>)`（WebView2 UDF 即 session 邊界，feasibility Q4 CONFIRMED）。不用 incognito。
-- **macOS**：`data_store_identifier` 只支援 macOS ≥ 14；先用共享 default profile，隔離列 v2
+- **macOS**：`data_directory` 對 WKWebView 無效。這個 fork 在 macOS 14+ 用每個 provider 固定的 `data_store_identifier` 分開登入儲存；macOS 13 會退回共享 default profile，因此需要 macOS 14 或更新版本
 - **不做 cookie 匯入/匯出**（HTTP-only + 加密 + device-bound，不可靠）
 - `Webview::cookies()` 只能在 async context 呼叫（Windows deadlock 警告）
 

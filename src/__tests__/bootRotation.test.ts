@@ -42,7 +42,7 @@ vi.mock('../host', () => ({
   },
 }));
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok', 'meta'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini', 'grok', 'gemini'];
 
 function state(provider: AIProvider): ProviderState {
   return {
@@ -98,37 +98,37 @@ describe('provider boot rotation', () => {
   });
 
   it('rejects a waiter promptly when its provider boot rotates, without waiting out the step timeout', async () => {
-    handleTitleMessage(title('meta', 'boot-a', 1));
-    const promise = waitForResponse('meta', 1);
+    handleTitleMessage(title('gemini', 'boot-a', 1));
+    const promise = waitForResponse('gemini', 1);
     const rejection = promise.catch((error: unknown) => error);
 
     await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS - 1_000);
     await expect(Promise.race([rejection.then(() => 'settled'), Promise.resolve('pending')])).resolves.toBe('pending');
 
-    handleTitleMessage(title('meta', 'boot-b', 1, { thinking: true }));
+    handleTitleMessage(title('gemini', 'boot-b', 1, { thinking: true }));
     const error = await rejection;
 
     expect(error).toBeInstanceOf(ProviderPageReloadedError);
     expect(error).toBeInstanceOf(ProviderResponseError);
     expect(error).toMatchObject({
-      provider: 'meta',
+      provider: 'gemini',
       message: 'provider page reloaded during its turn',
       response: '[Error: provider page reloaded during its turn]',
     });
     expect(isRetryableSendRejection(error as ProviderPageReloadedError)).toBe(false);
     expect((error as Error).message).not.toMatch(/timed out/);
-    expect(hasWaiter('meta', 1)).toBe(false);
+    expect(hasWaiter('gemini', 1)).toBe(false);
 
     await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS);
     await expect(rejection).resolves.toBe(error);
-    expect(hasWaiter('meta', 1)).toBe(false);
+    expect(hasWaiter('gemini', 1)).toBe(false);
   });
 
   it('does not reject a waiter on the first boot the host sees for that provider', async () => {
     const rotations = vi.fn();
     const unsubscribe = onProviderBootRotation(rotations);
     let settled = false;
-    const promise = waitForResponse('meta', 2).then(
+    const promise = waitForResponse('gemini', 2).then(
       (response) => {
         settled = true;
         return response;
@@ -139,30 +139,30 @@ describe('provider boot rotation', () => {
       },
     );
 
-    handleTitleMessage(title('meta', 'boot-a', 1));
-    handleTitleMessage(title('meta', 'boot-a', 2, { thinking: true }));
+    handleTitleMessage(title('gemini', 'boot-a', 1));
+    handleTitleMessage(title('gemini', 'boot-a', 2, { thinking: true }));
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(rotations).not.toHaveBeenCalled();
     expect(settled).toBe(false);
-    expect(hasWaiter('meta', 2)).toBe(true);
+    expect(hasWaiter('gemini', 2)).toBe(true);
 
-    publishBridgeMessage(done('meta', 'still waiting on the first boot'));
+    publishBridgeMessage(done('gemini', 'still waiting on the first boot'));
     await expect(promise).resolves.toBe('still waiting on the first boot');
     unsubscribe();
   });
 
   it('does not disturb a waiter on another provider when one provider rotates', async () => {
-    handleTitleMessage(title('meta', 'boot-a', 1));
+    handleTitleMessage(title('gemini', 'boot-a', 1));
     handleTitleMessage(title('chatgpt', 'boot-a', 1));
-    const meta = waitForResponse('meta', 1);
+    const gemini = waitForResponse('gemini', 1);
     const chatgpt = waitForResponse('chatgpt', 1);
-    const metaError = meta.catch((error: unknown) => error);
+    const metaError = gemini.catch((error: unknown) => error);
 
-    handleTitleMessage(title('meta', 'boot-b', 1));
+    handleTitleMessage(title('gemini', 'boot-b', 1));
     await expect(metaError).resolves.toBeInstanceOf(ProviderPageReloadedError);
-    expect(hasWaiter('meta', 1)).toBe(false);
+    expect(hasWaiter('gemini', 1)).toBe(false);
     expect(hasWaiter('chatgpt', 1)).toBe(true);
 
     publishBridgeMessage(done('chatgpt', 'chatgpt kept its turn'));
@@ -170,46 +170,46 @@ describe('provider boot rotation', () => {
   });
 
   it('rejects an in-flight waiter when reload replaces the document after boot reset, and does not re-arm it', async () => {
-    handleTitleMessage(title('meta', 'boot-a', 1));
-    const promise = waitForResponse('meta', 4);
+    handleTitleMessage(title('gemini', 'boot-a', 1));
+    const promise = waitForResponse('gemini', 4);
     const rejection = promise.catch((error: unknown) => error);
 
-    resetProviderBootState('meta');
-    expect(hasWaiter('meta', 4)).toBe(true);
+    resetProviderBootState('gemini');
+    expect(hasWaiter('gemini', 4)).toBe(true);
 
-    handleTitleMessage(title('meta', 'boot-b', 1));
+    handleTitleMessage(title('gemini', 'boot-b', 1));
     const error = await rejection;
     expect(error).toBeInstanceOf(ProviderPageReloadedError);
-    expect(hasWaiter('meta', 4)).toBe(false);
+    expect(hasWaiter('gemini', 4)).toBe(false);
 
-    handleTitleMessage(title('meta', 'boot-b', 2, { thinking: true }));
+    handleTitleMessage(title('gemini', 'boot-b', 2, { thinking: true }));
     await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS);
 
-    expect(hasWaiter('meta', 4)).toBe(false);
+    expect(hasWaiter('gemini', 4)).toBe(false);
     await expect(rejection).resolves.toBe(error);
     expect((error as Error).message).toBe('provider page reloaded during its turn');
   });
 
   it('does not let a later thinking status re-arm a waiter rejected by boot rotation', async () => {
-    handleTitleMessage(title('meta', 'boot-a', 1));
-    const promise = waitForResponse('meta', 3);
+    handleTitleMessage(title('gemini', 'boot-a', 1));
+    const promise = waitForResponse('gemini', 3);
     const rejection = promise.catch((error: unknown) => error);
 
-    handleTitleMessage(title('meta', 'boot-b', 1));
+    handleTitleMessage(title('gemini', 'boot-b', 1));
     const error = await rejection;
     expect(error).toBeInstanceOf(ProviderPageReloadedError);
 
-    handleTitleMessage(title('meta', 'boot-b', 2, { thinking: true }));
+    handleTitleMessage(title('gemini', 'boot-b', 2, { thinking: true }));
     publishBridgeMessage({
       v: 1,
       action: 'STATUS_REPORT',
-      provider: 'meta',
+      provider: 'gemini',
       payload: { thinking: true },
       transport: 'title',
     });
     await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS);
 
-    expect(hasWaiter('meta', 3)).toBe(false);
+    expect(hasWaiter('gemini', 3)).toBe(false);
     await expect(rejection).resolves.toBe(error);
     expect((error as Error).message).toBe('provider page reloaded during its turn');
   });
@@ -219,26 +219,26 @@ describe('provider boot rotation', () => {
     const unsubscribe = onStepTimeoutEvent((event) => events.push(event));
     const prompt = 'UNIQUE_PROMPT_TOKEN must not flow downstream';
 
-    const terminal = runStep('meta', prompt);
+    const terminal = runStep('gemini', prompt);
     const terminalError = terminal.catch((error: unknown) => error);
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(1));
-    handleTitleMessage(title('meta', 'boot-a', 1));
-    handleTitleMessage(title('meta', 'boot-b', 1));
+    handleTitleMessage(title('gemini', 'boot-a', 1));
+    handleTitleMessage(title('gemini', 'boot-b', 1));
     await expect(terminalError).resolves.toBeInstanceOf(ProviderPageReloadedError);
     expect(events.some((event) => event.timedOut)).toBe(false);
     expect(host.provider.send).toHaveBeenCalledTimes(1);
     expect(String(vi.mocked(host.provider.send).mock.calls[0]?.[1])).not.toContain('provider page reloaded');
 
     vi.mocked(host.provider.send).mockClear();
-    const recoverable = runStep('meta', prompt, undefined, { recoverProviderErrors: true });
+    const recoverable = runStep('gemini', prompt, undefined, { recoverProviderErrors: true });
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(1));
-    handleTitleMessage(title('meta', 'boot-c', 1));
-    handleTitleMessage(title('meta', 'boot-d', 1));
+    handleTitleMessage(title('gemini', 'boot-c', 1));
+    handleTitleMessage(title('gemini', 'boot-d', 1));
     await vi.waitFor(() => expect(events.some((event) => event.timedOut)).toBe(true));
 
     const dialogEvent = events.find((event) => event.timedOut);
     expect(dialogEvent).toMatchObject({
-      provider: 'meta',
+      provider: 'gemini',
       failureKind: 'provider-error',
       recoveryDetail: 'provider-page-reloaded',
     });
@@ -254,7 +254,7 @@ describe('provider boot rotation', () => {
     unsubscribe();
   });
 
-  it('reports the localized reload message when a structured workflow stops', async () => {
+  it('pauses a debate when the provider page reloads and does not ask to resend', async () => {
     const messages: BridgeMessage[] = [];
     const unsubscribe = onBridgeMessage((message) => messages.push(message));
     const run = runWorkflow({ text: 'UNIQUE_PROMPT_TOKEN round question', mode: 'debate', locale: 'de' });
@@ -268,10 +268,10 @@ describe('provider boot rotation', () => {
     unsubscribe();
 
     expect(host.provider.send).toHaveBeenCalledTimes(1);
-    const expected = `Error: ${formatI18n(t('workflow.providerPageReloaded', 'de'), {
+    const expected = formatI18n(t('workflow.debatePaused.unknownSend', 'de'), {
       provider: AI_PROVIDERS[provider].name,
-    })}`;
-    const system = messages.find((message) => message.payload === expected);
+    });
+    const system = messages.find((message) => message.action === 'RESPONSE_DONE' && message.payload === expected);
     expect(system).toMatchObject({
       action: 'RESPONSE_DONE',
       transport: 'local',
@@ -279,19 +279,20 @@ describe('provider boot rotation', () => {
     });
     expect(String(system?.payload)).not.toContain('UNIQUE_PROMPT_TOKEN');
     expect(String(system?.payload)).not.toContain('[Error:');
+    expect(String(system?.payload)).not.toContain('Wiederholen');
     expect(vi.mocked(host.provider.send).mock.calls.some((call) => String(call[1]).includes('provider page reloaded'))).toBe(false);
   });
 
   it.each([
-    ['en', "Meta AI's page reloaded during its turn, so this answer was lost. Retry that step."],
-    ['zh-TW', 'Meta AI 的頁面在輪到它時重新載入，這次的回答已遺失。請重試這個步驟。'],
-    ['ja', 'Meta AI のページが自分の番の途中で再読み込みされたため、この回答は失われました。このステップを再試行してください。'],
-    ['de', 'Die Seite von Meta AI wurde während dieses Schritts neu geladen, daher ist diese Antwort verloren. Wiederholen Sie diesen Schritt.'],
+    ['en', "Gemini's page reloaded during its turn, so this answer was lost. Retry that step."],
+    ['zh-TW', 'Gemini 的頁面在輪到它時重新載入，這次的回答已遺失。請重試這個步驟。'],
+    ['ja', 'Gemini のページが自分の番の途中で再読み込みされたため、この回答は失われました。このステップを再試行してください。'],
+    ['de', 'Die Seite von Gemini wurde während dieses Schritts neu geladen, daher ist diese Antwort verloren. Wiederholen Sie diesen Schritt.'],
   ] as const)('shows the reload explanation in the recovery dialog for %s', (locale: Locale, description: string) => {
     const html = renderToStaticMarkup(
       createElement(StepTimeoutDialog, {
         event: {
-          provider: 'meta',
+          provider: 'gemini',
           remainingMs: 0,
           timedOut: true,
           failureKind: 'provider-error',

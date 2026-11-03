@@ -165,10 +165,10 @@ describe('pull transport', () => {
   it('marks degraded after retry failure, no-ops while degraded, and recovers on new bootId', async () => {
     const { messages, cleanup } = collectMessages();
     vi.mocked(host.provider.evalWithCallback).mockRejectedValue(new Error('timeout'));
-    await pullProvider('claude');
+    await pullProvider('grok');
     const callsAfterDegrade = vi.mocked(host.provider.evalWithCallback).mock.calls.length;
-    await pullProvider('claude');
-    handleTitleMessage({ v: 1, action: 'STATUS_REPORT', provider: 'claude', bootId: 'new', seq: 1, transport: 'title' });
+    await pullProvider('grok');
+    handleTitleMessage({ v: 1, action: 'STATUS_REPORT', provider: 'grok', bootId: 'new', seq: 1, transport: 'title' });
     cleanup();
     expect(vi.mocked(host.provider.evalWithCallback).mock.calls.length).toBe(callsAfterDegrade);
     expect(messages.some((msg) => msg.transport === 'local' && msg.payload && (msg.payload as { bridge?: string }).bridge === 'degraded')).toBe(true);
@@ -180,7 +180,7 @@ describe('pull transport', () => {
     const { messages, cleanup } = collectMessages();
     vi.mocked(host.provider.evalWithCallback).mockResolvedValue('not-json');
 
-    const pull = pullProvider('claude');
+    const pull = pullProvider('grok');
     await vi.advanceTimersByTimeAsync(1_000);
     await pull;
     cleanup();
@@ -189,7 +189,7 @@ describe('pull transport', () => {
     expect(host.provider.stop).not.toHaveBeenCalled();
     expect(messages).toContainEqual(expect.objectContaining({
       action: 'STATUS_REPORT',
-      provider: 'claude',
+      provider: 'grok',
       payload: { bridge: 'degraded', reason: 'pull_failed' },
       transport: 'local',
     }));
@@ -423,8 +423,8 @@ describe('bootstrap outbox helpers', () => {
     expect(shouldDeferBridgeStart('grok', 'loading', false, true)).toBe(true);
     expect(shouldDeferBridgeStart('grok', 'complete', true, true)).toBe(true);
     expect(shouldDeferBridgeStart('chatgpt', 'loading', false, true)).toBe(true);
-    expect(shouldDeferBridgeStart('claude', 'complete', false, true)).toBe(true);
-    expect(shouldDeferBridgeStart('claude', 'complete', false, false)).toBe(false);
+    expect(shouldDeferBridgeStart('grok', 'complete', false, true)).toBe(true);
+    expect(shouldDeferBridgeStart('grok', 'complete', false, false)).toBe(false);
   });
 
   it('recognizes only Gemini Google sorry challenge paths', () => {
@@ -439,7 +439,6 @@ describe('bootstrap outbox helpers', () => {
   it('does not monkey-patch Grok history during authentication', () => {
     expect(shouldPatchHistory('grok')).toBe(false);
     expect(shouldPatchHistory('chatgpt')).toBe(true);
-    expect(shouldPatchHistory('claude')).toBe(true);
     expect(shouldPatchHistory('gemini')).toBe(true);
   });
 

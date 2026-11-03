@@ -8,18 +8,18 @@ import type { ReportDigest } from './reportBroken';
 export function ReportPreviewDialog({
   preview,
   busy,
-  onOpenIssue,
+  onCopyDiagnostics,
   onCancel,
   locale,
 }: {
   preview: { provider: AIProvider; digest: ReportDigest; body: string };
   busy: boolean;
-  onOpenIssue: () => void | Promise<void>;
+  onCopyDiagnostics: () => void | Promise<void>;
   onCancel: () => void;
   locale: Locale;
 }) {
   const digest = preview.digest;
-  const [status, setStatus] = useState<'opening' | 'error'>();
+  const [status, setStatus] = useState<'copying' | 'error'>();
   const inFlight = useRef(false);
   const generation = useRef(0);
   useEffect(() => () => { generation.current += 1; }, []);
@@ -28,13 +28,13 @@ export function ReportPreviewDialog({
     generation.current += 1;
     onCancel();
   };
-  const openIssue = async () => {
+  const copyDiagnostics = async () => {
     if (inFlight.current || busy || !digest.firstMissingField) return;
     inFlight.current = true;
     const request = ++generation.current;
-    setStatus('opening');
+    setStatus('copying');
     try {
-      await onOpenIssue();
+      await onCopyDiagnostics();
       if (request === generation.current) {
         setStatus(undefined);
         onCancel();
@@ -93,10 +93,10 @@ export function ReportPreviewDialog({
           <button
             type="button"
             className="border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950 px-3 py-1.5 text-sm text-emerald-700 dark:text-emerald-100 hover:bg-emerald-100 dark:hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => void openIssue()}
-            disabled={busy || status === 'opening' || !digest.firstMissingField}
+            onClick={() => void copyDiagnostics()}
+            disabled={busy || status === 'copying' || !digest.firstMissingField}
           >
-            {translateKey(status === 'error' ? 'provider.retry' : 'reportPreview.openGithubIssue', locale)}
+            {translateKey(status === 'error' ? 'provider.retry' : 'reportPreview.copyDiagnostics', locale)}
           </button>
         </div>
     </ModalDialog>

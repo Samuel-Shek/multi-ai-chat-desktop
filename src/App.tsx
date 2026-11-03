@@ -27,11 +27,14 @@ import {
   type ManualFocusPointerDown,
 } from './ui/autoFocus';
 import { CheckpointCard } from './ui/CheckpointCard';
+import { PlatformNoticeBanner } from './ui/PlatformNoticeBanner';
+import { platformNoticeFromError, platformNoticeFromSettings } from './ui/platformNotice';
 import { AiSisterAvatar, AiSisterEnsembleCard } from './ui/AiSisterTheme';
 import { ConversationSidebar } from './ui/ConversationSidebar';
 import {
   beginNewConversationSession,
   createConversationSession,
+  clearConversationSessions,
   loadConversationSessions,
   removeConversationSession,
   saveConversationSessionsWithQuotaRecovery,
@@ -97,7 +100,7 @@ import { processingAfterSend, processingAfterSettle, processingAfterWorkflowStat
 import { Resizer } from './ui/Resizer';
 import { SettingsModal } from './ui/SettingsModal';
 import {
-  activeProvidersForStandby,
+  activeProviders as listActiveProviders,
   defaultSettings,
   mergeSettings,
   normalizeSettings,
@@ -151,9 +154,9 @@ interface Bubble {
 const PROVIDERS = Object.keys(AI_PROVIDERS) as AIProvider[];
 
 function initialConversationState(): { sessions: ConversationSession[]; active: ConversationSession } {
-  const loaded = loadConversationSessions();
-  const active = loaded[0] ?? createConversationSession();
-  return { sessions: upsertConversationSession(loaded, active), active };
+  // Conversation text is not read until settings confirm saving is on. The default is off.
+  const active = createConversationSession();
+  return { sessions: [active], active };
 }
 
 function conversationMessages(messages: readonly Bubble[]): ConversationSessionMessage[] {
@@ -169,7 +172,14 @@ function conversationMessages(messages: readonly Bubble[]): ConversationSessionM
   }));
 }
 
-function persistConversationSessions(sessions: readonly ConversationSession[]): ConversationSession[] {
+function persistConversationSessions(
+  sessions: readonly ConversationSession[],
+  saveContent: boolean,
+): ConversationSession[] {
+  if (!saveContent) {
+    clearConversationSessions();
+    return [...sessions];
+  }
   const result = saveConversationSessionsWithQuotaRecovery(sessions);
   if (!result.saved) {
     recordEventLog({
@@ -299,6 +309,7 @@ export default function App() {
   const [sessionSidebarCollapsed, setSessionSidebarCollapsed] = useState(loadSessionSidebarCollapsed);
   const [messages, setMessages] = useState<Bubble[]>(() => bubblesFromSession(initialConversation.active));
   const [workflowStatus, setWorkflowStatus] = useState('');
+  const [platformNotice, setPlatformNotice] = useState('');
   const [mode, setMode] = useState<ChatMode>(initialConversation.active.mode);
   const [presetId, setPresetId] = useState<WorkflowPresetId>(initialConversation.active.presetId ?? initialConversation.active.mode);
   const [presetDetailsId, setPresetDetailsId] = useState<WorkflowPresetId | undefined>();
@@ -347,6 +358,8 @@ export default function App() {
   const statesRef = useRef(states);
   const userHiddenRef = useRef<Set<AIProvider>>(userHidden);
   const settingsRef = useRef<AppSettings>(appSettings);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const localeRef = useRef(locale);
   const autoFollowEnabledRef = useRef(true);
   const manualFocusLockRef = useRef<ManualFocusLock | undefined>();
@@ -377,10 +390,7 @@ export default function App() {
   const pullBridge = useRef(new Map<AIProvider, PullBridgeState>());
   const replayPanelRef = useRef<ReplayPanel | null>(null);
   const targets = targetSelection.targets;
-  const activeProviders = useMemo(
-    () => activeProvidersForStandby(appSettings.standbyProvider),
-    [appSettings.standbyProvider],
-  );
+  const activeProviders = useMemo(() => listActiveProviders(), []);
   const centeredProvider = useMemo(() => centerPresentationProvider(presentation), [presentation]);
   const presentationHidden = useMemo(() => {
     const next = new Set(centerHidden);
@@ -494,6 +504,8 @@ export default function App() {
   }, [sessionSidebarCollapsed]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+    const saveContent = appSettings.saveConversationContent;
     const timer = window.setTimeout(() => {
       setSessions((current) => {
         const existing = current.find((session) => session.id === activeSessionId);
@@ -509,11 +521,11 @@ export default function App() {
           presetId: storedPresetId,
           messages: storedMessages,
         });
-        return persistConversationSessions(next);
+        return persistConversationSessions(next, saveContent);
       });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [activeSessionId, messages, mode, presetId]);
+  }, [activeSessionId, appSettings.saveConversationContent, messages, mode, presetId, settingsLoaded]);
 
   const setManualFocusLock = useCallback((lock: ManualFocusLock | undefined) => {
     manualFocusLockRef.current = lock;
@@ -658,7 +670,23 @@ export default function App() {
       .then((value) => {
         if (disposed) return;
         const loaded = normalizeSettings(value);
+        const notice = platformNoticeFromSettings(value);
+        if (notice) setPlatformNotice(notice);
         settingsRef.current = loaded;
+        if (loaded.saveConversationContent && messagesRef.current.length === 0) {
+          const stored = loadConversationSessions();
+          if (stored.length > 0) {
+            const active = stored[0];
+            setSessions(upsertConversationSession(stored, active));
+            setActiveSessionId(active.id);
+            replayContextSessionRef.current = active.messages.length > 0 ? active.id : undefined;
+            setMessages(bubblesFromSession(active));
+            setMode(active.mode);
+            setPresetId(active.presetId ?? active.mode);
+          }
+        } else if (!loaded.saveConversationContent) {
+          clearConversationSessions();
+        }
         setAppSettings(loaded);
         setLanguage(loaded.language);
         setFocusPaneWidth(loaded.focusPaneWidth);
@@ -912,48 +940,69 @@ export default function App() {
     [boundsForPresentationTarget, presentationTransitionCurrent],
   );
 
+  const rememberPlatformNotice = useCallback((error: unknown) => {
+    const notice = platformNoticeFromError(error);
+    if (notice) setPlatformNotice(notice);
+    return notice;
+  }, []);
+
   const openProvider = useCallback(async (provider: AIProvider) => {
     const rect = fallbackBoundsForProvider(provider);
     resetProviderBootState(provider);
-    await host.provider.open(provider, rect);
-  }, [fallbackBoundsForProvider]);
+    try {
+      await host.provider.open(provider, rect);
+    } catch (error) {
+      rememberPlatformNotice(error);
+      throw error;
+    }
+  }, [fallbackBoundsForProvider, rememberPlatformNotice]);
 
   const ensureProviderLoadedHidden = useCallback(
     async (provider: AIProvider, bounds: DOMRectReadOnly, shouldContinue: () => boolean = () => true) => {
       if (!shouldContinue()) return;
       if (statesRef.current[provider].webview !== 'loaded') {
         resetProviderBootState(provider);
-        await host.provider.open(provider, bounds);
+        try {
+          await host.provider.open(provider, bounds);
+        } catch (error) {
+          rememberPlatformNotice(error);
+          throw error;
+        }
       }
       if (!shouldContinue()) return;
       await host.provider.park(provider, bounds);
     },
-    [],
+    [rememberPlatformNotice],
   );
 
   const restoreProvider = useCallback(
     async (provider: AIProvider) => {
-      const target = presentationRef.current[provider];
-      if (target === 'chip') return;
-      if (target === 'side') {
-        await ensureProviderLoadedHidden(
-          provider,
-          hiddenProviderLoadBounds(),
-          () => presentationRef.current[provider] === 'side',
-        );
-        return;
+      try {
+        const target = presentationRef.current[provider];
+        if (target === 'chip') return;
+        if (target === 'side') {
+          await ensureProviderLoadedHidden(
+            provider,
+            hiddenProviderLoadBounds(),
+            () => presentationRef.current[provider] === 'side',
+          );
+          return;
+        }
+        if (target === 'center' && centerSurfaceRef.current === 'text') {
+          await ensureProviderLoadedHidden(
+            provider,
+            hiddenProviderLoadBounds(),
+            () => presentationRef.current[provider] === 'center' && centerSurfaceRef.current === 'text',
+          );
+          return;
+        }
+        await openProvider(provider);
+      } catch (error) {
+        if (rememberPlatformNotice(error)) return;
+        throw error;
       }
-      if (target === 'center' && centerSurfaceRef.current === 'text') {
-        await ensureProviderLoadedHidden(
-          provider,
-          hiddenProviderLoadBounds(),
-          () => presentationRef.current[provider] === 'center' && centerSurfaceRef.current === 'text',
-        );
-        return;
-      }
-      await openProvider(provider);
     },
-    [ensureProviderLoadedHidden, openProvider],
+    [ensureProviderLoadedHidden, openProvider, rememberPlatformNotice],
   );
 
   const syncBounds = useCallback(async (provider: AIProvider) => {
@@ -1135,7 +1184,7 @@ export default function App() {
 
   const changeProviderPresentation = useCallback(
     async (provider: AIProvider, state: WebviewPresentationState) => {
-      if (!activeProvidersForStandby(settingsRef.current.standbyProvider).includes(provider)) return;
+      if (!listActiveProviders().includes(provider)) return;
       const generation = beginPresentationTransition(provider);
       const next = setProviderPresentation(presentationRef.current, provider, state);
       if (state === 'center') startCenterTransitionInFlight(provider, generation);
@@ -1235,8 +1284,8 @@ export default function App() {
 
   const forceProviderNativeCenter = useCallback(
     async (provider: AIProvider) => {
-      if (!activeProvidersForStandby(settingsRef.current.standbyProvider).includes(provider)) {
-        throw new Error(`${provider} is configured as the standby provider`);
+      if (!listActiveProviders().includes(provider)) {
+        throw new Error(`${provider} is not one of the bundled providers`);
       }
       forcedNativeCenterProviderRef.current = provider;
       setCenterSurfaceMode('native');
@@ -1484,7 +1533,7 @@ export default function App() {
         presetId,
         roles: workflowRoles,
         targets: workflowTargets,
-        activeProviders: activeProvidersForStandby(snapshotSettings.standbyProvider),
+        activeProviders: listActiveProviders(),
         locale: localeRef.current,
         snapshotPersistence: snapshotSettings.snapshotPersistence,
         snapshotRedactionTier: snapshotSettings.snapshotRedactionTier,
@@ -1578,7 +1627,7 @@ export default function App() {
         const result = await preflightGraph(
           serialGraph,
           workflowRoles,
-          activeProvidersForStandby(settingsRef.current.standbyProvider),
+          listActiveProviders(),
         );
         if (!result.ok) {
           recordEventLog(eventFromWorkflowPreflightBlocked(mode, result.unavailable.length + result.aliased.length));
@@ -1650,7 +1699,7 @@ export default function App() {
       presetId: conversationPresetId(presetId, mode),
       now,
     });
-    setSessions(persistConversationSessions(transition.sessions));
+    setSessions(persistConversationSessions(transition.sessions, settingsRef.current.saveConversationContent));
     setActiveSessionId(transition.active.id);
     replayContextSessionRef.current = undefined;
     setMessages([]);
@@ -1695,13 +1744,13 @@ export default function App() {
       if (isProcessing) return;
       const remaining = removeConversationSession(sessions, session.id);
       if (session.id !== activeSessionId) {
-        setSessions(persistConversationSessions(remaining));
+        setSessions(persistConversationSessions(remaining, settingsRef.current.saveConversationContent));
         return;
       }
 
       const nextActive = remaining[0] ?? createConversationSession();
       const next = upsertConversationSession(remaining, nextActive);
-      setSessions(persistConversationSessions(next));
+      setSessions(persistConversationSessions(next, settingsRef.current.saveConversationContent));
       selectConversationSession(nextActive);
     },
     [activeSessionId, isProcessing, selectConversationSession, sessions],
@@ -1753,14 +1802,10 @@ export default function App() {
     [reportBusy],
   );
 
-  const openReportIssue = async () => {
+  const copyReportDiagnostics = async () => {
     if (!reportPreview || reportBusy) return;
-    setReportBusy(true);
-    try {
-      await host.adapter.openIssue(reportPreview.provider, reportPreview.body);
-    } finally {
-      setReportBusy(false);
-    }
+    if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(reportPreview.body);
   };
 
   const dragFocusPane = (deltaX: number, phase: 'start' | 'move' | 'end') => {
@@ -1804,8 +1849,8 @@ export default function App() {
 
   const openProviderLogin = useCallback(
     async (provider: AIProvider) => {
-      if (!activeProvidersForStandby(settingsRef.current.standbyProvider).includes(provider)) {
-        throw new Error(`${provider} is configured as the standby provider`);
+      if (!listActiveProviders().includes(provider)) {
+        throw new Error(`${provider} is not one of the bundled providers`);
       }
       setMessagesMaximized(false);
       for (let attempt = 0; attempt < 8 && overlayGuardOpenRef.current; attempt += 1) {
@@ -1832,32 +1877,9 @@ export default function App() {
   );
 
   const applySavedSettings = (settings: AppSettings) => {
-    const previousStandby = settingsRef.current.standbyProvider;
-    const nextActiveProviders = activeProvidersForStandby(settings.standbyProvider);
-    if (previousStandby !== settings.standbyProvider) {
-      setTargetSelection((current) => {
-        if (!current.userTouched) {
-          return { targets: [...nextActiveProviders], defaultsInitialized: true, userTouched: false };
-        }
-        const nextTargets = Array.from(
-          new Set(
-            current.targets
-              .map((provider) => (provider === settings.standbyProvider ? previousStandby : provider))
-              .filter((provider) => nextActiveProviders.includes(provider)),
-          ),
-        );
-        return { ...current, targets: nextTargets, defaultsInitialized: true };
-      });
-      pendingRestore.current.delete(settings.standbyProvider);
-      pendingProviderResetRef.current.delete(settings.standbyProvider);
-      setUserHidden((current) => {
-        const next = new Set(current);
-        next.delete(settings.standbyProvider);
-        return next;
-      });
-      if (statesRef.current[settings.standbyProvider].webview !== 'none') {
-        void host.provider.close(settings.standbyProvider).catch(() => undefined);
-      }
+    const wasSavingConversation = settingsRef.current.saveConversationContent;
+    if (wasSavingConversation && !settings.saveConversationContent) {
+      clearConversationSessions();
     }
     settingsRef.current = settings;
     presentationRef.current = settings.presentation;
@@ -2047,6 +2069,7 @@ export default function App() {
         </div>
 
         <section className="ai-sister-conversation-workspace flex min-h-0 min-w-0 flex-col border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+          <PlatformNoticeBanner notice={platformNotice} />
           <div className="ai-sister-conversation-toolbar border-b border-zinc-200 dark:border-zinc-800 pb-3">
             <div className="flex flex-wrap items-start gap-3">
               {/* The floor is what makes the row wrap: at min-w-0 this block collapses instead, so the
@@ -2213,7 +2236,6 @@ export default function App() {
         focusPaneWidth={focusPaneWidth}
         presentation={presentation}
         providerStates={states}
-        providerSelectionDisabled={isProcessing}
         activeModeRoleSettings={presetId === 'brainstorm' ? 'roundtable' : mode === 'free' ? undefined : mode}
         onClose={() => setSettingsOpen(false)}
         onSaved={applySavedSettings}
@@ -2222,7 +2244,7 @@ export default function App() {
         <ReportPreviewDialog
           preview={reportPreview}
           busy={reportBusy}
-          onOpenIssue={openReportIssue}
+          onCopyDiagnostics={copyReportDiagnostics}
           onCancel={() => setReportPreview(null)}
           locale={locale}
         />

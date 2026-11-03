@@ -19,13 +19,13 @@ function button(node: ReactNode, label: string): ReactElement<{ onClick: () => v
   }
 }
 
-function harness(onOpenIssue: () => void | Promise<void>) {
+function harness(onCopyDiagnostics: () => void | Promise<void>) {
   let state: unknown;
   const refs: { current: unknown }[] = [];
   let cleanup: (() => void) | undefined;
   const onCancel = vi.fn();
   const digest: ReportDigest = {
-    provider: 'meta', displayName: 'Meta AI', adapterVersion: 1, appVersion: '1.8.9',
+    provider: 'gemini', displayName: 'Meta AI', adapterVersion: 1, appVersion: '1.8.9',
     path: '/', pageContext: 'unknown', composerHasText: false,
     fields: [], candidates: [], firstMissingField: 'inputSelectors',
   };
@@ -34,7 +34,7 @@ function harness(onOpenIssue: () => void | Promise<void>) {
     vi.mocked(useState).mockImplementationOnce(() => [state, (next) => { state = next; }]);
     vi.mocked(useRef).mockImplementation((initial) => refs[index++] ?? (refs[index - 1] = { current: initial }));
     vi.mocked(useEffect).mockImplementationOnce((effect) => { cleanup = effect() || undefined; });
-    const tree = ReportPreviewDialog({ preview: { provider: 'meta', digest, body: 'Exact preview payload' }, busy, onOpenIssue, onCancel, locale: 'en' });
+    const tree = ReportPreviewDialog({ preview: { provider: 'gemini', digest, body: 'Exact preview payload' }, busy, onCopyDiagnostics, onCancel, locale: 'en' });
     vi.mocked(useRef).mockRestore();
     vi.mocked(useEffect).mockReset();
     return tree;
@@ -59,9 +59,9 @@ describe('ReportPreviewDialog issue recovery', () => {
       return Promise.reject(new Error('private host diagnostic'));
     });
     const ui = harness(openIssue);
-    expect(() => ui.click('Open GitHub issue')).not.toThrow();
+    expect(() => ui.click('Copy diagnostics')).not.toThrow();
     await vi.waitFor(() => expect(ui.html().includes('role="alert"')).toBe(true));
-    expect(ui.html()).toContain("Couldn&#x27;t open the GitHub issue. Please try again.");
+    expect(ui.html()).toContain("Couldn&#x27;t copy the diagnostics. Please try again.");
     expect(ui.html()).toContain('Exact preview payload');
     expect(ui.html()).not.toContain('private host diagnostic');
     expect(ui.onCancel).not.toHaveBeenCalled();
@@ -75,11 +75,11 @@ describe('ReportPreviewDialog issue recovery', () => {
     const second = deferred();
     const openIssue = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const ui = harness(openIssue);
-    const open = button(ui.render(), 'Open GitHub issue')!;
+    const open = button(ui.render(), 'Copy diagnostics')!;
     open.props.onClick();
     open.props.onClick();
     expect(openIssue).toHaveBeenCalledTimes(1);
-    expect(button(ui.render(), 'Open GitHub issue')!.props.disabled).toBe(true);
+    expect(button(ui.render(), 'Copy diagnostics')!.props.disabled).toBe(true);
     first.reject(new Error('denied'));
     await vi.waitFor(() => expect(ui.html().includes('role="alert"')).toBe(true));
     const retry = button(ui.render(), 'Try again')!;
@@ -93,9 +93,9 @@ describe('ReportPreviewDialog issue recovery', () => {
   it('does not open an issue without a structural failure or while busy', () => {
     const openIssue = vi.fn();
     const ui = harness(openIssue);
-    button(ui.render(true), 'Open GitHub issue')!.props.onClick();
+    button(ui.render(true), 'Copy diagnostics')!.props.onClick();
     ui.digest.firstMissingField = undefined;
-    const open = button(ui.render(), 'Open GitHub issue')!;
+    const open = button(ui.render(), 'Copy diagnostics')!;
     expect(open.props.disabled).toBe(true);
     open.props.onClick();
     expect(openIssue).not.toHaveBeenCalled();
@@ -104,7 +104,7 @@ describe('ReportPreviewDialog issue recovery', () => {
   it.each(['cancel', 'unmount'] as const)('ignores late completion after %s', async (action) => {
     const pending = deferred();
     const ui = harness(vi.fn().mockReturnValue(pending.promise));
-    ui.click('Open GitHub issue');
+    ui.click('Copy diagnostics');
     if (action === 'cancel') ui.click('Cancel');
     else ui.unmount();
     pending.resolve();

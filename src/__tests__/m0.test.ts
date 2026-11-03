@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import chatgpt from '../../adapters/chatgpt.json';
-import claude from '../../adapters/claude.json';
 import gemini from '../../adapters/gemini.json';
 import grok from '../../adapters/grok.json';
 import {
@@ -18,13 +17,13 @@ import {
 describe('M0 shared constants and adapter seeds', () => {
   it('exports bridge and navigation constants from SPEC sections 6.3 and 7.3', () => {
     expect(AI_PROVIDERS.gemini.url).toBe('https://gemini.google.com');
-    expect(DOCK_SLOT_PROVIDERS).toEqual(['chatgpt', 'claude', 'gemini', 'grok']);
-    expect(DEFAULT_FREE_TARGET_PROVIDERS).toEqual(['chatgpt', 'claude', 'gemini', 'grok']);
+    expect(DOCK_SLOT_PROVIDERS).toEqual(['chatgpt', 'grok', 'gemini']);
+    expect(DEFAULT_FREE_TARGET_PROVIDERS).toEqual(['chatgpt', 'grok', 'gemini']);
     expect(PULL_MAX_DECODED_BYTES).toBe(1_048_576);
     expect(OUTBOX_MAX_BYTES).toBe(10_485_760);
     expect(POLL_PULL_MS).toBe(500);
     expect(SSO_ALLOWLIST_HOSTS).toContain('accounts.google.com');
-    expect(SSO_ALLOWLIST_HOSTS).toContain('github.com');
+    expect(SSO_ALLOWLIST_HOSTS).not.toContain('github.com');
   });
 
   it('keeps original extension mode labels and prompt data available', () => {
@@ -47,11 +46,6 @@ describe('M0 shared constants and adapter seeds', () => {
     expect(chatgpt.inputStrategy).toBe('prosemirror-paste');
     expect(chatgpt.timing.doneDelayMs).toBe(3000);
     expect(chatgpt.timing.chunkDebounceMs).toBe(800);
-
-    expect(claude.schemaVersion).toBe(1);
-    expect(claude.inputStrategy).toBe('prosemirror-paste');
-    expect(claude.timing.doneDelayMs).toBe(5000);
-    expect(claude.timing.chunkDebounceMs).toBe(500);
 
     expect(gemini.schemaVersion).toBe(1);
     expect(gemini.inputStrategy).toBe('quill-angular');

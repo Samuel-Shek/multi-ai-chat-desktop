@@ -7,7 +7,7 @@ import { useI18n } from '../i18n/context';
 import { formatI18n } from '../i18n/t';
 import type { PresentationByProvider } from './presentation';
 import {
-  activeProvidersForStandby,
+  activeProviders,
   type AppSettings,
   DEFAULT_FONT_SIZE,
   MIN_FONT_SIZE,
@@ -18,10 +18,8 @@ import {
   MODE_ROLE_LABEL_KEYS,
   MODE_ROLE_MODE_LABEL_KEYS,
   assignModeRole,
-  replaceModeRoleProvider,
   type ModeRoleAssignments,
 } from './modeRoleAssignment';
-import { compareVersions, fetchLatestRelease } from './updateCheck';
 import { host } from '../host';
 import {
   filterEventLogByProvider,
@@ -39,14 +37,6 @@ import { createTrailingDebounce, type TrailingDebounce } from './trailingDebounc
 
 const PROVIDERS = Object.keys(AI_PROVIDERS) as AIProvider[];
 
-type UpdateCheckState =
-  | { status: 'idle' }
-  | { status: 'checking' }
-  | { status: 'up-to-date'; version: string }
-  | { status: 'available'; tagName: string; htmlUrl: string }
-  | { status: 'unavailable' }
-  | { status: 'error'; message: string };
-
 interface SettingsError {
   messageKey: 'settings.loadFailed' | 'settings.saveFailed';
   detail?: string;
@@ -57,33 +47,6 @@ interface PendingFontSizeUpdate {
   updateSeq: number;
 }
 
-interface PersistSettingsOptions {
-  standbyProvider?: AIProvider;
-}
-
-// Exported for the persistence regression test; keeping the merge beside the
-// modal makes its live-prop precedence explicit.
-// eslint-disable-next-line react-refresh/only-export-components
-export function applyStandbyProviderToLiveSettings(
-  previousStandbyProvider: AIProvider,
-  nextStandbyProvider: AIProvider,
-  openProviders: readonly AIProvider[],
-  presentation: PresentationByProvider,
-): Pick<AppSettings, 'openProviders' | 'presentation'> {
-  if (previousStandbyProvider === nextStandbyProvider) {
-    return { openProviders: [...openProviders], presentation: { ...presentation } };
-  }
-
-  return {
-    openProviders: openProviders.filter((provider) => provider !== nextStandbyProvider),
-    presentation: {
-      ...presentation,
-      [previousStandbyProvider]: 'side',
-      [nextStandbyProvider]: 'chip',
-    },
-  };
-}
-
 export function SettingsModal({
   open,
   openProviders,
@@ -91,7 +54,6 @@ export function SettingsModal({
   presentation,
   providerStates,
   activeModeRoleSettings,
-  providerSelectionDisabled = false,
   onClose,
   onSaved,
 }: {
@@ -101,7 +63,6 @@ export function SettingsModal({
   presentation: PresentationByProvider;
   providerStates: Record<AIProvider, ProviderState>;
   activeModeRoleSettings?: keyof ModeRoleAssignments;
-  providerSelectionDisabled?: boolean;
   onClose: () => void;
   onSaved: (settings: AppSettings) => void;
 }) {
@@ -116,13 +77,10 @@ export function SettingsModal({
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<SettingsError | undefined>();
-  const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({ status: 'idle' });
   const closeTimerRef = useRef<number | undefined>();
   const settingsPersistenceRef = useRef(createSettingsPersistence(host.settings));
   const fontSizeDebounceRef = useRef<TrailingDebounce<PendingFontSizeUpdate> | undefined>(undefined);
   const modalSessionRef = useRef(0);
-  const updateCheckSeqRef = useRef(0);
-  const updateCheckAbortRef = useRef<AbortController | undefined>();
   const draftUpdateSeqRef = useRef(0);
   const languageUpdateSeqRef = useRef(0);
   const fontSizeUpdateSeqRef = useRef(0);
@@ -149,7 +107,6 @@ export function SettingsModal({
     setSaved(false);
     setSaving(false);
     setError(undefined);
-    setUpdateCheck({ status: 'idle' });
     void settingsPersistenceRef.current
       .load()
       .then((loaded) => {
@@ -178,7 +135,6 @@ export function SettingsModal({
       });
     return () => {
       disposed = true;
-      updateCheckAbortRef.current?.abort();
     };
   }, [open]);
 
@@ -202,30 +158,19 @@ export function SettingsModal({
     setDraft((current) => (current ? { ...current, ...patch } : current));
   };
 
-  const persistSettingsPatch = (
-    patch: Partial<AppSettings>,
-    options: PersistSettingsOptions = {},
-  ): Promise<AppSettings> =>
+  const persistSettingsPatch = (patch: Partial<AppSettings>): Promise<AppSettings> =>
     settingsPersistenceRef.current.update(() => {
       const live = liveRef.current;
-      const liveProviderSettings = options.standbyProvider
-        ? applyStandbyProviderToLiveSettings(
-            settingsPersistenceRef.current.current()?.standbyProvider ?? options.standbyProvider,
-            options.standbyProvider,
-            live.openProviders,
-            live.presentation,
-          )
-        : { openProviders: [...live.openProviders], presentation: { ...live.presentation } };
       return {
         ...patch,
-        ...liveProviderSettings,
+        openProviders: [...live.openProviders],
+        presentation: { ...live.presentation },
         focusPaneWidth: live.focusPaneWidth,
       };
     });
 
   const applySavedSettings = (settings: AppSettings) => {
     // A queued autosave can start before React renders the new parent props.
-    // Keep its live provider state aligned with the just-committed standby swap.
     liveRef.current = {
       openProviders: settings.openProviders,
       focusPaneWidth: settings.focusPaneWidth,
@@ -283,28 +228,12 @@ export function SettingsModal({
     fontSizeDebounceRef.current?.schedule({ fontSize, updateSeq });
   };
 
-  const updateStandbyProvider = (standbyProvider: AIProvider) => {
-    if (!draft || standbyProvider === draft.standbyProvider || providerSelectionDisabled || saveInFlightRef.current) return;
-    const previousStandby = draft.standbyProvider;
-    updateDraft({
-      standbyProvider,
-      modeRoles: replaceModeRoleProvider(draft.modeRoles, standbyProvider, previousStandby),
-      openProviders: draft.openProviders.filter((provider) => provider !== standbyProvider),
-      presentation: {
-        ...draft.presentation,
-        [previousStandby]: 'side',
-        [standbyProvider]: 'chip',
-      },
-    });
-  };
-
   const closeSettings = async () => {
     if (saveInFlightRef.current) return;
     const modalSession = modalSessionRef.current;
     try {
       await fontSizeDebounceRef.current?.flush();
       if (modalSession === modalSessionRef.current && !saveInFlightRef.current) {
-        updateCheckAbortRef.current?.abort();
         onClose();
       }
     } catch {
@@ -323,10 +252,7 @@ export function SettingsModal({
     setSaving(true);
     setError(undefined);
     try {
-      const next = await persistSettingsPatch(
-        { ...draft },
-        { standbyProvider: draft.standbyProvider },
-      );
+      const next = await persistSettingsPatch({ ...draft });
       applySavedSettings(next);
       if (modalSession === modalSessionRef.current && draftUpdateSeq === draftUpdateSeqRef.current) {
         setSaved(true);
@@ -342,39 +268,6 @@ export function SettingsModal({
     } finally {
       saveInFlightRef.current = false;
       if (modalSession === modalSessionRef.current) setSaving(false);
-    }
-  };
-
-  const checkForUpdates = async () => {
-    updateCheckAbortRef.current?.abort();
-    const controller = new AbortController();
-    updateCheckAbortRef.current = controller;
-    const modalSession = modalSessionRef.current;
-    const updateCheckSeq = ++updateCheckSeqRef.current;
-    const isCurrent = () =>
-      !controller.signal.aborted &&
-      modalSession === modalSessionRef.current &&
-      updateCheckSeq === updateCheckSeqRef.current;
-    setUpdateCheck({ status: 'checking' });
-    try {
-      const currentVersion = await host.app.version();
-      if (!isCurrent()) return;
-      const latest = await fetchLatestRelease(undefined, controller.signal);
-      if (!isCurrent()) return;
-      if (!latest) {
-        setUpdateCheck({ status: 'unavailable' });
-        return;
-      }
-      if (compareVersions(currentVersion, latest.tagName)) {
-        setUpdateCheck({ status: 'available', tagName: latest.tagName, htmlUrl: latest.htmlUrl });
-      } else {
-        setUpdateCheck({ status: 'up-to-date', version: currentVersion });
-      }
-    } catch (reason) {
-      if (!isCurrent()) return;
-      setUpdateCheck({ status: 'error', message: reason instanceof Error ? reason.message : String(reason) });
-    } finally {
-      if (updateCheckAbortRef.current === controller) updateCheckAbortRef.current = undefined;
     }
   };
 
@@ -481,41 +374,12 @@ export function SettingsModal({
                   {t('settings.providersDescription')}
                 </p>
               </div>
-              <label className="block text-xs text-zinc-600 dark:text-zinc-400">
-                <span className="mb-1 block font-medium text-zinc-700 dark:text-zinc-300">
-                  {t('settings.providersSelect')}
-                </span>
-                <select
-                  value={draft.standbyProvider}
-                  disabled={providerSelectionDisabled || saving}
-                  aria-describedby={
-                    providerSelectionDisabled ? 'settings-providers-unavailable' : 'settings-providers-description'
-                  }
-                  title={providerSelectionDisabled ? t('input.workflowRunning') : undefined}
-                  onChange={(event) => updateStandbyProvider(event.target.value as AIProvider)}
-                  className="w-full border border-zinc-300 bg-zinc-50 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-sky-600"
-                >
-                  {PROVIDERS.map((provider) => (
-                    <option key={provider} value={provider}>
-                      {AI_PROVIDERS[provider].name}{provider === 'meta' ? ` — ${t('settings.providersDefault')}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {providerSelectionDisabled ? (
-                <p id="settings-providers-unavailable" className="text-xs text-zinc-500 dark:text-zinc-500">
-                  {t('input.workflowRunning')}
-                </p>
-              ) : null}
               <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('settings.providers')}>
-                {activeProvidersForStandby(draft.standbyProvider).map((provider) => (
+                {activeProviders().map((provider) => (
                   <span key={provider} className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
                     {AI_PROVIDERS[provider].name} · {t('settings.providerActive')}
                   </span>
                 ))}
-                <span className="rounded-full border border-zinc-300 bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                  {AI_PROVIDERS[draft.standbyProvider].name} · {t('settings.providerStandby')}
-                </span>
               </div>
             </section>
 
@@ -552,7 +416,7 @@ export function SettingsModal({
                           }
                           className="w-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-sky-500 dark:focus:border-sky-600"
                         >
-                          {activeProvidersForStandby(draft.standbyProvider).map((provider) => (
+                          {PROVIDERS.map((provider) => (
                             <option key={provider} value={provider}>{AI_PROVIDERS[provider].name}</option>
                           ))}
                         </select>
@@ -565,6 +429,20 @@ export function SettingsModal({
 
             <section className="space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-4">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t('settings.privacyHistory')}</h3>
+              <label className="flex items-start gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={draft.saveConversationContent}
+                  onChange={(event) => updateDraft({ saveConversationContent: event.target.checked })}
+                  className="mt-0.5 h-4 w-4 accent-sky-700"
+                />
+                <span>
+                  <span className="block font-medium text-zinc-700 dark:text-zinc-300">{t('settings.saveConversationContent')}</span>
+                  <span className="mt-1 block leading-relaxed">
+                    {t('settings.saveConversationContentDescription')}
+                  </span>
+                </span>
+              </label>
               <label className="flex items-start gap-3 text-xs text-zinc-600 dark:text-zinc-400">
                 <input
                   type="checkbox"
@@ -598,58 +476,17 @@ export function SettingsModal({
               ) : null}
             </section>
 
-            {!draft.portable ? (
-              <section className="space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-4">
-                <span className="block text-xs text-zinc-600 dark:text-zinc-400">{t('settings.updates')}</span>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    className="border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => void checkForUpdates()}
-                    disabled={updateCheck.status === 'checking'}
-                  >
-                    {updateCheck.status === 'checking' ? t('settings.checking') : t('settings.checkForUpdates')}
-                  </button>
-                  {updateCheck.status === 'up-to-date' ? (
-                    <span className="text-xs text-zinc-600 dark:text-zinc-400">{t('settings.upToDate').replace('{version}', updateCheck.version)}</span>
-                  ) : null}
-                  {updateCheck.status === 'available' ? (
-                    <span className="text-xs text-sky-700 dark:text-sky-300">
-                      {t('settings.newVersionAvailable').replace('{version}', updateCheck.tagName)} {'->'}{' '}
-                      <DownloadPageLink key={updateCheck.htmlUrl} url={updateCheck.htmlUrl} />
-                    </span>
-                  ) : null}
-                  {updateCheck.status === 'unavailable' ? (
-                    <span className="text-xs text-amber-700 dark:text-amber-300">{t('settings.releasesUnavailable')}</span>
-                  ) : null}
-                  {updateCheck.status === 'error' ? (
-                    <span className="text-xs text-red-700 dark:text-red-300">{t('settings.updateCheckFailed')} {updateCheck.message}</span>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-
             <details className="group border-t border-zinc-200 pt-4 dark:border-zinc-800">
               <summary className="cursor-pointer list-none rounded px-1 py-2 focus-visible:outline-offset-2">
                 <span className="flex items-start justify-between gap-3">
                   <span>
                     <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.advanced')}</span>
-                    <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{t('settings.advancedDescription')}</span>
+                    <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{t('settings.hardenedLocalNotice')}</span>
                   </span>
                   <span className="text-zinc-500 transition group-open:rotate-180" aria-hidden="true">⌄</span>
                 </span>
               </summary>
               <div className="mt-3 space-y-4 border-l-2 border-zinc-200 pl-4 dark:border-zinc-800">
-                <section>
-                  <label className="block text-xs text-zinc-600 dark:text-zinc-400">
-                    <span className="mb-1 block">{t('settings.adapterBaseUrl')}</span>
-                    <input
-                      value={draft.adapterBaseUrl}
-                      onChange={(event) => updateDraft({ adapterBaseUrl: event.target.value })}
-                      className="w-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-sky-500 dark:focus:border-sky-600"
-                    />
-                  </label>
-                </section>
                 <details className="group/access rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800">
                   <summary className="cursor-pointer text-xs font-medium text-zinc-700 dark:text-zinc-300">{t('provider.access')}</summary>
                   <AccessTransparencySection />
@@ -678,24 +515,7 @@ export function SettingsModal({
         ) : null}
 
         <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-          <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-            <div>
-              <SettingsExternalLink
-                url="https://ted-h.com"
-                label={t('settings.madeByTedH')}
-                errorMessage={t('settings.externalLinkFailed')}
-                className="text-sky-700 underline underline-offset-2 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
-              />
-              <span> · Ted Huang · </span>
-              <span className="select-all">TED@TED-H.com</span>
-            </div>
-            <SettingsExternalLink
-              url="https://ai-sister.com"
-              label={t('settings.sponsoredByAiSister')}
-              errorMessage={t('settings.externalLinkFailed')}
-              className="text-sky-700 underline underline-offset-2 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
-            />
-          </div>
+          <p className="max-w-sm text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('settings.hardenedLocalNotice')}</p>
           <div className="flex items-center justify-end gap-2">
             <button type="button" className="px-3 py-1.5 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50" onClick={closeSettings} disabled={saving}>
               {t('settings.cancel')}
@@ -964,64 +784,4 @@ function EventLogRow({ event, now }: { event: EventLogEvent; now: number }) {
 
 function errorDetail(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason);
-}
-
-export function DownloadPageLink({ url }: { url: string }) {
-  const { t } = useI18n();
-  return (
-    <SettingsExternalLink
-      url={url}
-      label={t('settings.downloadPage')}
-      errorMessage={t('settings.downloadPageFailed')}
-    />
-  );
-}
-
-export function SettingsExternalLink({
-  url,
-  label,
-  errorMessage,
-  className = 'underline hover:text-sky-800 dark:hover:text-sky-200',
-}: {
-  url: string;
-  label: string;
-  errorMessage: string;
-  className?: string;
-}) {
-  const { t } = useI18n();
-  const [status, setStatus] = useState<'opening' | 'error'>();
-  const inFlight = useRef(false);
-  const generation = useRef(0);
-  useEffect(() => () => { generation.current += 1; }, []);
-
-  const openLink = async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    const request = ++generation.current;
-    setStatus('opening');
-    try {
-      await host.app.openExternal(url);
-      if (request === generation.current) setStatus(undefined);
-    } catch {
-      if (request === generation.current) setStatus('error');
-    } finally {
-      inFlight.current = false;
-    }
-  };
-
-  return (
-    <span className="inline-flex flex-wrap items-center gap-2">
-      {status === 'error' ? (
-        <span role="alert" className="text-red-700 dark:text-red-300">{errorMessage}</span>
-      ) : null}
-      <button
-        type="button"
-        className={`${className} disabled:cursor-wait disabled:opacity-50`}
-        disabled={status === 'opening'}
-        onClick={() => void openLink()}
-      >
-        {status === 'error' ? t('provider.retry') : label}
-      </button>
-    </span>
-  );
 }

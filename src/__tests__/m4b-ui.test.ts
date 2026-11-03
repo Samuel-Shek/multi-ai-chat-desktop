@@ -8,7 +8,7 @@ import { defaultSettings, mergeSettings, normalizeSettings } from '../ui/setting
 import { DEFAULT_SLOT_ASSIGNMENT, SLOT_IDS, assignSlotProvider, isProviderPermutation, normalizeSlotAssignment } from '../ui/slotAssignment';
 import { visibleLoadedProviders } from '../ui/visibility';
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
 
 function state(provider: AIProvider, webview: ProviderState['webview'] = 'loaded'): ProviderState {
   return {
@@ -36,35 +36,31 @@ describe('M4b UI helpers', () => {
     expect(gridTemplateColumns({ left: 260, right: 340 })).toBe('260px 6px minmax(360px, 1fr) 6px 340px');
   });
 
-  it('swaps slot providers and preserves the four-provider permutation', () => {
+  it('swaps slot providers and preserves the three-provider permutation', () => {
     expect(DEFAULT_SLOT_ASSIGNMENT).toEqual({
       leftTop: 'chatgpt',
-      leftBottom: 'claude',
+      leftBottom: 'grok',
       rightTop: 'gemini',
-      rightBottom: 'grok',
     });
 
     const assigned = assignSlotProvider(DEFAULT_SLOT_ASSIGNMENT, 'leftTop', 'grok');
     expect(assigned).toEqual({
       leftTop: 'grok',
-      leftBottom: 'claude',
+      leftBottom: 'chatgpt',
       rightTop: 'gemini',
-      rightBottom: 'chatgpt',
     });
     expect(isProviderPermutation(SLOT_IDS.map((slot) => assigned[slot]))).toBe(true);
-    expect(isProviderPermutation(['chatgpt', 'claude', 'gemini', 'gemini'])).toBe(false);
+    expect(isProviderPermutation(['chatgpt', 'grok', 'grok'])).toBe(false);
     expect(
       normalizeSlotAssignment({
         leftTop: 'removed-provider',
         leftBottom: 'chatgpt',
-        rightTop: 'claude',
-        rightBottom: 'gemini',
+        rightTop: 'grok',
       }),
     ).toEqual({
-      leftTop: 'grok',
+      leftTop: 'gemini',
       leftBottom: 'chatgpt',
-      rightTop: 'claude',
-      rightBottom: 'gemini',
+      rightTop: 'grok',
     });
   });
 
@@ -72,12 +68,12 @@ describe('M4b UI helpers', () => {
     expect(
       visibleLoadedProviders(
         states({
-          claude: state('claude', 'none'),
+          grok: state('grok', 'none'),
         }),
         new Set<AIProvider>(['gemini']),
         providers,
       ),
-    ).toEqual(['chatgpt', 'grok']);
+    ).toEqual(['chatgpt']);
   });
 
   it('normalizes and merges settings defensively', () => {
@@ -109,7 +105,7 @@ describe('M4b UI helpers', () => {
       language: 'fr',
       responseLanguage: 'fr',
       theme: 'dark',
-      presentation: { chatgpt: 'chip', claude: 'center', gemini: 'bad', grok: 'center' },
+      presentation: { chatgpt: 'chip', grok: 'center', gemini: 'bad' },
     });
     expect(normalized.language).toBe('system');
     expect(normalized.responseLanguage).toBe('auto');
@@ -124,7 +120,7 @@ describe('M4b UI helpers', () => {
     expect(normalized.portable).toBe(true);
     expect(normalized.snapshotPersistence).toBe(true);
     expect(normalized.snapshotRedactionTier).toBe('metadata-only');
-    expect(normalized.presentation).toEqual({ chatgpt: 'chip', claude: 'center', gemini: 'side', grok: 'side', meta: 'chip' });
+    expect(normalized.presentation).toEqual({ chatgpt: 'chip', grok: 'center', gemini: 'side' });
 
     expect(mergeSettings(normalized, { snapshotRedactionTier: 'hashes', language: 'zh-TW', responseLanguage: 'en' })).toMatchObject({
       layoutMode: 'focus',
@@ -155,18 +151,18 @@ describe('M4b UI helpers', () => {
     const hide = vi.fn();
     const show = vi.fn();
     const host = { hide, show };
-    const hidden = new Set<AIProvider>(['claude']);
+    const hidden = new Set<AIProvider>(['grok']);
     const snapshot = states();
 
     guard.open(visibleLoadedProviders(snapshot, hidden, providers), host);
+    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'gemini']);
+
+    hidden.delete('grok');
+    guard.reconcile(visibleLoadedProviders(snapshot, hidden, providers), host);
     expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'gemini', 'grok']);
 
-    hidden.delete('claude');
-    guard.reconcile(visibleLoadedProviders(snapshot, hidden, providers), host);
-    expect(hide.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'gemini', 'grok', 'claude']);
-
     guard.close(host);
-    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'gemini', 'grok', 'claude']);
+    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'gemini', 'grok']);
   });
 
   it('does not restore a provider that becomes user-hidden while a modal is open', () => {
@@ -182,6 +178,6 @@ describe('M4b UI helpers', () => {
     guard.reconcile(visibleLoadedProviders(snapshot, hidden, providers), host);
     guard.close(host);
 
-    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'claude', 'grok']);
+    expect(show.mock.calls.map(([provider]) => provider)).toEqual(['chatgpt', 'grok']);
   });
 });

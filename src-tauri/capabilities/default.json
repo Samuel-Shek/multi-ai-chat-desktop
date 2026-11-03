@@ -22,7 +22,6 @@
     "allow-dev-log",
     "allow-adapter-push",
     "allow-report-broken",
-    "allow-open-adapter-issue",
     "allow-settings-get",
     "allow-settings-set",
     "allow-export-markdown",

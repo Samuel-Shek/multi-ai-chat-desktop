@@ -163,14 +163,12 @@ function classifyPageContext(provider: string, path: string): ReportDigest['page
   const normalized = path.length > 1 ? path.replace(/\/+$/, '') : path;
   const newSessionPaths: Record<string, string[]> = {
     chatgpt: ['/', '/new'],
-    claude: ['/new'],
     gemini: ['/app'],
     grok: ['/'],
   };
   if (newSessionPaths[provider]?.includes(normalized)) return 'new-session';
   const conversationPrefixes: Record<string, string[]> = {
     chatgpt: ['/c/', '/g/'],
-    claude: ['/chat/'],
     gemini: ['/app/'],
     grok: ['/c/'],
   };

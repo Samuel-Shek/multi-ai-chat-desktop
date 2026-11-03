@@ -78,38 +78,23 @@ describe('debug bundle builder', () => {
     expect(bundle).not.toContain(legacyPublishTokenKey);
   });
 
-  it('redacts credentials, query strings, and fragments from adapter base URLs', () => {
-    const password = 'private-password';
-    const token = 'secret-url-token';
+  it('records whether conversation text is saved and omits remote adapter settings', () => {
     const bundle = baseBundle({
       settings: {
-        adapterBaseUrl: `https://user:${password}@example.test/adapters/v1?token=${token}#debug`,
+        adapterBaseUrl: 'https://user:private-password@example.test/adapters',
         updaterChannel: 'stable',
         portable: true,
+        saveConversationContent: false,
       },
     });
     const parsed = JSON.parse(bundle) as { settings: ReturnType<typeof pickDebugSettings> };
 
-    expect(parsed.settings.adapterBaseUrl).toBe('https://example.test/adapters/v1');
-    expect(bundle).not.toContain(password);
-    expect(bundle).not.toContain(token);
-    expect(bundle).not.toContain('user:');
-    expect(bundle).not.toContain('?token=');
-    expect(bundle).not.toContain('#debug');
-  });
-
-  it('uses a safe placeholder for non-URL custom adapter base values', () => {
-    const bundle = baseBundle({
-      settings: {
-        adapterBaseUrl: 'not a url with private words',
-        updaterChannel: 'stable',
-        portable: true,
-      },
-    });
-    const parsed = JSON.parse(bundle) as { settings: ReturnType<typeof pickDebugSettings> };
-
-    expect(parsed.settings.adapterBaseUrl).toBe('(custom, non-URL)');
-    expect(bundle).not.toContain('private words');
+    expect(parsed.settings.saveConversationContent).toBe(false);
+    expect(parsed.settings.portable).toBe(true);
+    expect(bundle).not.toContain('adapterBaseUrl');
+    expect(bundle).not.toContain('example.test');
+    expect(bundle).not.toContain('private-password');
+    expect(bundle).not.toContain('updaterChannel');
   });
 
   it('does not serialize prompt, reply, or payload body text from raw event details', () => {
@@ -237,9 +222,8 @@ describe('debug bundle builder', () => {
     expect(parsed.settings).toEqual({
       language: 'en',
       responseLanguage: 'auto',
-      adapterBaseUrl: 'https://example.test/adapters',
-      updaterChannel: 'stable',
       portable: true,
+      saveConversationContent: null,
     });
     expect(chatgpt?.status).toEqual({
       bridge: 'degraded',
@@ -248,24 +232,24 @@ describe('debug bundle builder', () => {
       thinking: true,
     });
     expect(chatgpt?.adapterVersion).toBe(7);
-    expect(parsed.providers.map((provider) => provider.provider)).toEqual(providers);
+    expect(parsed.providers.map((provider) => provider.provider)).toEqual(['chatgpt', 'grok', 'gemini']);
     expect(parsed.eventLog).toContain('ChatGPT adapter update v7');
     expect(debugBundleFilename(new Date('2026-07-05T01:02:03Z'))).toBe('multi-ai-chat-debug-2026-07-05-01-02-03.txt');
   });
 
-  it('includes Meta AI status and adapter version in the debug bundle', () => {
+  it('includes Gemini status and adapter version in the debug bundle', () => {
     const events: EventLogEvent[] = [
       {
         ts: 1,
-        provider: 'meta',
+        provider: 'gemini',
         kind: 'adapter-notice',
-        summary: 'Meta AI adapter update v1',
+        summary: 'Gemini adapter update v1',
         detail: { adapterVersion: 1, schemaVersion: 1 },
       },
     ];
     const bundle = baseBundle({
       providerStates: {
-        meta: state('meta', { login: 'logged_out', adapter: 'broken' }),
+        gemini: state('gemini', { login: 'logged_out', adapter: 'broken' }),
       },
       events,
     });
@@ -278,14 +262,14 @@ describe('debug bundle builder', () => {
       }>;
       eventLog: string;
     };
-    const meta = parsed.providers.find((provider) => provider.provider === 'meta');
+    const gemini = parsed.providers.find((provider) => provider.provider === 'gemini');
 
-    expect(meta).toMatchObject({
-      provider: 'meta',
-      name: 'Meta AI',
+    expect(gemini).toMatchObject({
+      provider: 'gemini',
+      name: 'Gemini',
       status: { adapter: 'broken', login: 'logged_out' },
       adapterVersion: 1,
     });
-    expect(parsed.eventLog).toContain('[Meta AI]');
+    expect(parsed.eventLog).toContain('[Gemini]');
   });
 });

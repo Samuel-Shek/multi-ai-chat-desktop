@@ -5,13 +5,13 @@ import { eventFromProviderSend } from '../diagnostics/eventLog';
 import { recordEventLog } from '../diagnostics/eventLogStore';
 import { clearInFlight, markInFlight } from './cancel';
 import { reserveTurn } from './state';
-import { rejectWaiter, waitForResponse } from './waitForResponse';
+import { consumeTruncated, rejectWaiter, waitForResponse } from './waitForResponse';
 
 export async function fillAndAwaitNativeSend(
   provider: AIProvider,
   text: string,
   reservedTurn?: number,
-): Promise<{ response: string; turn: number }> {
+): Promise<{ response: string; turn: number; truncated: boolean }> {
   const turn = reservedTurn ?? reserveTurn(provider);
   setProviderAwaiting(provider, true);
   const responsePromise = waitForResponse(provider, turn);
@@ -27,7 +27,8 @@ export async function fillAndAwaitNativeSend(
   }
   try {
     const response = await responsePromise;
-    return { response, turn };
+    const truncated = consumeTruncated(provider, turn);
+    return { response, turn, truncated };
   } finally {
     clearInFlight(provider);
   }

@@ -34,7 +34,7 @@ function harness(
   let cleanup: (() => void) | undefined;
   const onClose = vi.fn();
   const onSwitchMode = vi.fn();
-  const model = options.model ?? { title: 'Cannot start', unavailable: [{ provider: 'meta' as const, label: 'Meta AI', reason: 'Needs login' }], aliased: [] };
+  const model = options.model ?? { title: 'Cannot start', unavailable: [{ provider: 'gemini' as const, label: 'Gemini', reason: 'Needs login' }], aliased: [] };
   const render = (hidden = false) => {
     let index = 0;
     vi.mocked(useState).mockImplementationOnce(() => [state, (next) => { state = next; }]);
@@ -77,11 +77,11 @@ describe('PreflightDialog login recovery', () => {
     const ui = harness(login);
     expect(() => ui.click('Open/Login')).not.toThrow();
     await vi.waitFor(() => expect(ui.html()).toContain('role="alert"'));
-    expect(ui.html()).toContain('Couldn&#x27;t open Meta AI. Please try again.');
+    expect(ui.html()).toContain('Couldn&#x27;t open Gemini. Please try again.');
     expect(ui.onClose).not.toHaveBeenCalled();
     ui.click('Try again');
     await vi.waitFor(() => expect(ui.onClose).toHaveBeenCalledTimes(1));
-    expect(login.mock.calls).toEqual([['meta'], ['meta']]);
+    expect(login.mock.calls).toEqual([['gemini'], ['gemini']]);
     expect(ui.onSwitchMode).not.toHaveBeenCalled();
   });
 
@@ -138,16 +138,16 @@ describe('PreflightDialog login recovery', () => {
     const onOpenSettings = vi.fn();
     const ui = harness(onOpenLogin, {
       onOpenSettings,
-      activeProviders: ['chatgpt', 'claude', 'gemini', 'meta'],
+      activeProviders: ['chatgpt', 'grok', 'gemini', 'gemini'],
       model: {
         title: 'Cannot start',
-        unavailable: [{ provider: 'meta', label: 'Meta AI', reason: t('settings.providerStandby', 'en') }],
+        unavailable: [{ provider: 'gemini', label: 'Gemini', reason: t('settings.providerStandby', 'en') }],
         aliased: [],
       },
     });
     expect(button(ui.render(), t('settings.title', 'en'))).toBeUndefined();
     ui.click('Open/Login');
-    expect(onOpenLogin).toHaveBeenCalledWith('meta');
+    expect(onOpenLogin).toHaveBeenCalledWith('gemini');
     expect(onOpenSettings).not.toHaveBeenCalled();
   });
 
@@ -156,10 +156,10 @@ describe('PreflightDialog login recovery', () => {
     const onOpenSettings = vi.fn();
     const ui = harness(onOpenLogin, {
       onOpenSettings,
-      activeProviders: ['chatgpt', 'claude', 'gemini', 'grok'],
+      activeProviders: ['chatgpt', 'grok'],
       model: {
         title: 'Cannot start',
-        unavailable: [{ provider: 'meta', label: 'Meta AI', reason: 'No webview' }],
+        unavailable: [{ provider: 'gemini', label: 'Gemini', reason: 'No webview' }],
         aliased: [],
       },
     });
@@ -176,12 +176,12 @@ describe('PreflightDialog login recovery', () => {
     const onOpenSettings = vi.fn();
     const ui = harness(onOpenLogin, {
       onOpenSettings,
-      activeProviders: ['chatgpt', 'claude', 'gemini', 'grok'],
+      activeProviders: ['chatgpt', 'grok'],
       model: {
         title: 'Cannot start',
         unavailable: [
-          { provider: 'claude', label: 'Claude', reason: 'Needs login' },
-          { provider: 'meta', label: 'Meta AI', reason: 'Needs login' },
+          { provider: 'grok', label: 'Grok', reason: 'Needs login' },
+          { provider: 'gemini', label: 'Gemini', reason: 'Needs login' },
         ],
         aliased: [],
       },
@@ -197,13 +197,13 @@ describe('PreflightDialog login recovery', () => {
   it('hides login retry after that provider becomes standby and ignores a stale retry click', async () => {
     const login = vi.fn().mockRejectedValueOnce(new Error('host denied'));
     const onOpenSettings = vi.fn();
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
     const ui = harness(login, { onOpenSettings, activeProviders });
     ui.click('Open/Login');
     await vi.waitFor(() => expect(ui.html()).toContain('role="alert"'));
     const retry = button(ui.render(), 'Try again')!;
 
-    activeProviders.splice(activeProviders.indexOf('meta'), 1, 'grok');
+    activeProviders.splice(activeProviders.indexOf('gemini'), 1, 'grok');
     expect(button(ui.render(), 'Try again')).toBeUndefined();
     retry.props.onClick();
     await Promise.resolve();

@@ -7,15 +7,19 @@ import {
   providerResponseError,
   ProviderResponseError,
 } from './providerResponse';
+import { classifyDebateStop, debatePauseFromStep, DebatePausedError, isDebatePausedError } from './debatePause';
 import { sendAndWait } from './sendAndWait';
 import { SKIP_RESPONSE } from './state';
 import { awaitStepTimeoutAction, emitCountdown } from './stepTimeout';
 import { tearDownWaiters } from './teardown';
+import { consumeTruncated } from './waitForResponse';
 
 export const SEND_REJECTION_RETRY_DELAY_MS = 1_500;
 
 export interface RunStepOptions {
   recoverProviderErrors?: boolean;
+  /** Debate only. Stop the round instead of retrying or opening the recovery dialog. */
+  pauseInsteadOfRetry?: boolean;
 }
 
 function waitForSendRetry(): Promise<void> {
@@ -45,8 +49,14 @@ export async function runStep(
     emitCountdown(provider);
     try {
       const result = await sendAndWait(provider, prompt, reservedTurn);
+      const truncated = consumeTruncated(provider, result.turn);
+      if (options.pauseInsteadOfRetry) {
+        const stop = classifyDebateStop({ response: result.response, truncated });
+        if (stop) throw new DebatePausedError(stop, provider, truncated ? 'truncated reply' : result.response);
+      }
       const responseError = providerResponseError(provider, result.response);
       if (!responseError) return result;
+      if (options.pauseInsteadOfRetry) throw responseError;
       if (sendRejectionRetries === 0 && isRetryableSendRejection(responseError)) {
         sendRejectionRetries += 1;
         await waitForSendRetry();
@@ -54,6 +64,8 @@ export async function runStep(
       }
       throw responseError;
     } catch (error) {
+      if (isDebatePausedError(error)) throw error;
+      if (options.pauseInsteadOfRetry) throw debatePauseFromStep(provider, error);
       checkAborted();
       if (error instanceof ProviderResponseError && options.recoverProviderErrors !== true) throw error;
       const failureKind = error instanceof ProviderResponseError ? 'provider-error' : 'timeout';

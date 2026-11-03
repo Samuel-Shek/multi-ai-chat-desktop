@@ -20,12 +20,16 @@ export function sendRoleAssignment(provider: AIProvider, role: string, label: st
   });
 }
 
-export function emitSystemError(message: string): void {
+export function sendWorkflowNotice(message: string): void {
   publishBridgeMessage({
     v: 1,
     action: 'RESPONSE_DONE',
     provider: 'system' as AIProvider,
-    payload: `Error: ${message}`,
+    payload: message,
     transport: 'local',
   } satisfies BridgeMessage);
+}
+
+export function emitSystemError(message: string): void {
+  sendWorkflowNotice(`Error: ${message}`);
 }
