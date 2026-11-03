@@ -1,6 +1,6 @@
 # Build the hardened app on an Apple Silicon Mac
 
-This build is for an Apple Silicon Mac running **macOS 14 or later**. macOS 14 is required for separate ChatGPT, Grok, and Gemini login stores. On macOS 13, WebKit ignores a custom data-store identifier and the three panes share one profile.
+This build is for an Apple Silicon Mac running **macOS 14 or later**. macOS 14 is required for separate ChatGPT, Grok, and Gemini login stores. On macOS 13 the app shows **macOS 14+ required** and does not open the provider panes, so it does not fall back to one shared login store.
 
 The commands below were checked for syntax against this repository. The DMG itself has to be produced on the Mac. Linux cannot compile or run the WKWebView build.
 
@@ -28,20 +28,34 @@ rustup target add aarch64-apple-darwin
 rustc -vV
 ```
 
+## Commit and lockfiles
+
+Build one commit, from a clean tree. `pnpm-lock.yaml` and `src-tauri/Cargo.lock` are required. Do not refresh either lockfile, and do not run install or Cargo without the frozen and locked flags below.
+
+```bash
+git status --porcelain
+git rev-parse HEAD
+```
+
+`git status --porcelain` must print nothing. The commit to build is the full SHA from `git rev-parse HEAD`. That SHA is also the first line of `scripts/record-build-fingerprint.sh`. The pull request checklist names the same SHA. Do not build any other commit.
+
 ## Commands
 
-From the repository root, on the commit you intend to run:
+From the repository root, on that commit:
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm verify
 cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
 pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg -- --locked
+sh scripts/record-build-fingerprint.sh
 ```
 
 `pnpm verify` typechecks, lints, runs the frontend tests, checks the bundled adapters, builds the frontend, and fails if that build or the Rust sources reference `raw.githubusercontent.com`, `api.github.com`, or any other host that is not one of the three providers, their login hosts, or Tauri's local IPC hosts.
 
-`--locked` stops Cargo from changing `Cargo.lock` during the app build.
+`--frozen-lockfile` stops pnpm from changing `pnpm-lock.yaml`. `--locked` stops Cargo from changing `Cargo.lock` during the test and the app build.
+
+`scripts/record-build-fingerprint.sh` prints the commit, the SHA-256 of `pnpm-lock.yaml` and `src-tauri/Cargo.lock`, the SHA-256 of the ARM64 app binary and `.dmg` when those files exist, and the `codesign` display plus `codesign --verify --deep --strict` when `codesign` exists. Keep that output with the disk image. A dirty tree makes the script exit without printing a fingerprint.
 
 The first Rust release build compiles the Tauri crates and can take several minutes. Later builds are shorter.
 
@@ -57,6 +71,10 @@ If the filename differs by a space or hyphen, use the file that `pnpm tauri buil
 ```bash
 file "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Multi-AI Chat Hardened.app/Contents/MacOS/"*
 codesign -dv --verbose=4 "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Multi-AI Chat Hardened.app"
+codesign --verify --deep --strict "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Multi-AI Chat Hardened.app"
+shasum -a 256 "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Multi-AI Chat Hardened.app/Contents/MacOS/"*
+shasum -a 256 src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+sh scripts/record-build-fingerprint.sh
 ```
 
 Expect `arm64` and an ad-hoc signature (`Signature=adhoc`). This fork does not add an Apple Developer ID or notarization. The identifier in the signature must be `com.samuelshek.multiaichat.hardened`.
@@ -87,12 +105,10 @@ ls -d ~/Library/*/*samuelshek* ~/Library/*/*multiaichat* ~/Library/WebKit/com.sa
 
 Expect, and delete if present:
 
-- `~/Library/WebKit/com.samuelshek.multiaichat.hardened/`
-  - `WebsiteData/` is the default store used by the local control pane. Conversation text is written here only when **Save conversation text on this Mac** is on.
-  - `WebsiteDataStore/<UUID>/` is the per-provider store. The UUIDs compiled into the app are:
-    - ChatGPT `C4A7E1B0-6D23-4F58-9A01-7C3E5B8D2F64`
-    - Grok `9B2D6F14-8E70-4C3A-B591-0D6A4E7C1F83`
-    - Gemini `E85C3A27-1F94-4B60-8D52-6A0C9E3B7D15`
+- `~/Library/WebKit/com.samuelshek.multiaichat.hardened/WebsiteData/` is the default store used by the local control pane. Conversation text is written here only when **Save conversation text on this Mac** is on.
+- `~/Library/WebKit/com.samuelshek.multiaichat.hardened/WebsiteDataStore/C4A7E1B0-6D23-4F58-9A01-7C3E5B8D2F64` is the ChatGPT store (`c4a7e1b0-6d23-4f58-9a01-7c3e5b8d2f64`).
+- `~/Library/WebKit/com.samuelshek.multiaichat.hardened/WebsiteDataStore/9B2D6F14-8E70-4C3A-B591-0D6A4E7C1F83` is the Grok store (`9b2d6f14-8e70-4c3a-b591-0d6a4e7c1f83`).
+- `~/Library/WebKit/com.samuelshek.multiaichat.hardened/WebsiteDataStore/E85C3A27-1F94-4B60-8D52-6A0C9E3B7D15` is the Gemini store (`e85c3a27-1f94-4b60-8d52-6a0c9e3b7d15`).
 - `~/Library/Caches/com.samuelshek.multiaichat.hardened/`
 - `~/Library/HTTPStorages/com.samuelshek.multiaichat.hardened/`
 - `~/Library/HTTPStorages/com.samuelshek.multiaichat.hardened.binarycookies`

@@ -1,6 +1,7 @@
 import { DEFAULT_DEBATE_ROLES } from '../../../shared/constants';
 import type { WorkflowGraph } from './types';
 
+// One fixed round: pro, then con, then judge, then summary. Stop conditions pause this run.
 export const debateGraph: WorkflowGraph = {
   schemaVersion: 1,
   id: 'debate',

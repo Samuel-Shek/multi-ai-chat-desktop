@@ -254,7 +254,7 @@ describe('provider boot rotation', () => {
     unsubscribe();
   });
 
-  it('reports the localized reload message when a structured workflow stops', async () => {
+  it('pauses a debate when the provider page reloads and does not ask to resend', async () => {
     const messages: BridgeMessage[] = [];
     const unsubscribe = onBridgeMessage((message) => messages.push(message));
     const run = runWorkflow({ text: 'UNIQUE_PROMPT_TOKEN round question', mode: 'debate', locale: 'de' });
@@ -268,10 +268,10 @@ describe('provider boot rotation', () => {
     unsubscribe();
 
     expect(host.provider.send).toHaveBeenCalledTimes(1);
-    const expected = `Error: ${formatI18n(t('workflow.providerPageReloaded', 'de'), {
+    const expected = formatI18n(t('workflow.debatePaused.unknownSend', 'de'), {
       provider: AI_PROVIDERS[provider].name,
-    })}`;
-    const system = messages.find((message) => message.payload === expected);
+    });
+    const system = messages.find((message) => message.action === 'RESPONSE_DONE' && message.payload === expected);
     expect(system).toMatchObject({
       action: 'RESPONSE_DONE',
       transport: 'local',
@@ -279,6 +279,7 @@ describe('provider boot rotation', () => {
     });
     expect(String(system?.payload)).not.toContain('UNIQUE_PROMPT_TOKEN');
     expect(String(system?.payload)).not.toContain('[Error:');
+    expect(String(system?.payload)).not.toContain('Wiederholen');
     expect(vi.mocked(host.provider.send).mock.calls.some((call) => String(call[1]).includes('provider page reloaded'))).toBe(false);
   });
 

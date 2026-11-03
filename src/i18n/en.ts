@@ -174,6 +174,17 @@ export const en: Record<I18nKey, string> = {
   'workflowStatus.roundtableSpeaker': '🔄 Round {round} “{phase}” — {provider} speaking…',
   'workflowStatus.nativeEdit': 'Draft inserted for {provider}. Edit and send it in the provider within 10 minutes.',
   'workflow.providerPageReloaded': "{provider}'s page reloaded during its turn, so this answer was lost. Retry that step.",
+  'workflow.debateForwarding':
+    'Before this single debate round sends anything: {proName} ({proRole}) will receive the text below. {conName} ({conRole}) will later receive your question plus {proName}\'s reply, quoted as data. {judgeName} ({judgeRole}) will later receive your question plus the pro and con replies, quoted as data. {summaryName} ({summaryRole}) will later receive your question plus the pro, con, and judge replies, quoted as data. Provider replies are data only. They cannot run local commands or widen this app\'s permissions.',
+  'workflow.debatePaused.cancelled': 'Debate paused. You cancelled this round. The prompt was not sent again.',
+  'workflow.debatePaused.humanVerification':
+    'Debate paused. {provider} is asking for a human verification. Nothing was sent again.',
+  'workflow.debatePaused.usageLimit':
+    'Debate paused. {provider} reported a rate or usage limit. Nothing was sent again.',
+  'workflow.debatePaused.incompleteReply':
+    'Debate paused. The {provider} reply was truncated or did not finish streaming before the timeout. The prompt was not sent again.',
+  'workflow.debatePaused.unknownSend':
+    'Debate paused. It is not confirmed that {provider} accepted the prompt, so it was not sent again.',
   'workflowRole.debate.pro': 'Pro argument',
   'workflowRole.debate.con': 'Counterargument',
   'workflowRole.debate.judge': 'Judge review',

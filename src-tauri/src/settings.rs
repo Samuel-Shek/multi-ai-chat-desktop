@@ -64,6 +64,7 @@ fn serialized_settings(settings: &Value) -> Result<Vec<u8>, String> {
     let mut persisted = settings.clone();
     if let Value::Object(map) = &mut persisted {
         map.remove("portable");
+        map.remove("platformNotice");
     }
 
     serde_json::to_vec_pretty(&persisted).map_err(|error| error.to_string())
@@ -292,7 +293,11 @@ fn replace_file(tmp_path: &Path, path: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn settings_get(app: AppHandle) -> Result<serde_json::Value, String> {
+pub async fn settings_get(
+    app: AppHandle,
+    webview: tauri::Webview,
+) -> Result<serde_json::Value, String> {
+    crate::webviews::ensure_control_webview(&webview)?;
     let _lifecycle_guard = lock_provider_lifecycle()?;
     let path = settings_path(&app)?;
     let mut settings = normalize_settings_value(read_settings_for_provider_guard(&path));
@@ -301,12 +306,20 @@ pub async fn settings_get(app: AppHandle) -> Result<serde_json::Value, String> {
             "portable".to_string(),
             Value::Bool(portable_marker_exists()),
         );
+        if let Some(notice) = crate::webviews::platform_notice() {
+            map.insert("platformNotice".to_string(), Value::String(notice));
+        }
     }
     Ok(settings)
 }
 
 #[tauri::command]
-pub async fn settings_set(app: AppHandle, settings: serde_json::Value) -> Result<(), String> {
+pub async fn settings_set(
+    app: AppHandle,
+    webview: tauri::Webview,
+    settings: serde_json::Value,
+) -> Result<(), String> {
+    crate::webviews::ensure_control_webview(&webview)?;
     let _lifecycle_guard = lock_provider_lifecycle()?;
     let path = settings_path(&app)?;
     let settings = normalize_settings_value(settings);
@@ -390,7 +403,8 @@ mod tests {
             "adapterBaseUrl": "https://example.test/adapters",
             "columnWidths": { "left": 280, "right": 340 },
             "slotAssignment": ["chatgpt", "claude", "gemini", "grok"],
-            "portable": true
+            "portable": true,
+            "platformNotice": "macOS 14+ required"
         });
 
         write_settings(&path, &blob).expect("write settings");

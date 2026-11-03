@@ -1057,6 +1057,7 @@ pub async fn provider_open(
     bounds: Bounds,
 ) -> Result<ProviderState, String> {
     ensure_control_webview(&webview)?;
+    isolated_provider_store_status()?;
     let (position, size) = physical_bounds(&bounds)?;
     let adapter = adapters::get_adapter(&provider)?;
     // Serialize provider creation with standby changes. Otherwise settings_set could select this
@@ -1255,6 +1256,10 @@ pub async fn provider_open(
             false
         })
         .on_new_window(move |url, features| {
+            // macOS 13 would put this popup in the shared default store. Refuse instead.
+            if isolated_provider_store_status().is_err() {
+                return NewWindowResponse::Deny;
+            }
             // Challenge auxiliary about: documents are allowed only as in-webview navigation.
             // Keep all non-HTTP(S) popups fail-closed; Turnstile does not require popup windows.
             let provider_allowed =
@@ -1389,11 +1394,85 @@ fn close_provider(app: &AppHandle, provider: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Shown instead of opening a provider pane when separate WKWebView stores are unavailable.
+pub(crate) const MACOS_14_REQUIRED: &str = "macOS 14+ required. Separate ChatGPT, Grok, and Gemini logins need macOS 14 or later. This build will not fall back to one shared login store.";
+
+pub(crate) fn parse_macos_product_version(text: &str) -> Option<u32> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let version = if let Some(key_at) = trimmed.find("<key>ProductVersion</key>") {
+        let after = &trimmed[key_at + "<key>ProductVersion</key>".len()..];
+        let open = after.find("<string>")? + "<string>".len();
+        let rest = &after[open..];
+        let close = rest.find("</string>")?;
+        rest[..close].trim().to_string()
+    } else {
+        trimmed.lines().next()?.trim().to_string()
+    };
+    let major = version.split(['.', ' ']).next()?.trim();
+    if major.is_empty() || !major.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    major.parse().ok()
+}
+
+pub(crate) fn isolated_provider_stores_available(macos_major: Option<u32>) -> bool {
+    matches!(macos_major, Some(major) if major >= 14)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_major_version() -> Option<u32> {
+    if let Ok(plist) = std::fs::read_to_string("/System/Library/CoreServices/SystemVersion.plist") {
+        if let Some(major) = parse_macos_product_version(&plist) {
+            return Some(major);
+        }
+    }
+    let output = std::process::Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_macos_product_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn current_macos_major() -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_major_version()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Keep the parser in the non-macOS build. WKWebsiteDataStore is not used here.
+        parse_macos_product_version("")
+    }
+}
+
+/// On macOS, separate provider stores exist only on version 14 or later.
+/// An unknown version is refused so Wry cannot silently share one store.
+/// Other platforms do not use WKWebsiteDataStore, so provider panes still open.
+pub(crate) fn isolated_provider_store_status() -> Result<(), String> {
+    let supported = isolated_provider_stores_available(current_macos_major());
+    if cfg!(target_os = "macos") && !supported {
+        Err(MACOS_14_REQUIRED.to_string())
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn platform_notice() -> Option<String> {
+    isolated_provider_store_status().err()
+}
+
 /// Stable WKWebsiteDataStore UUIDs (macOS 14+). The same bytes are used for a
 /// provider pane and its login popups so cookies persist across restarts and
 /// stay out of the other providers' stores. `data_directory` does not isolate
-/// WKWebView profiles; this identifier does. On macOS older than 14, Wry falls
-/// back to the shared default store.
+/// WKWebView profiles; this identifier does. `provider_open` refuses to create
+/// a pane when `isolated_provider_store_status` fails, so older macOS does not
+/// fall back to the shared default store.
 pub(crate) fn provider_data_store_identifier(provider: &str) -> Option<[u8; 16]> {
     match provider {
         // c4a7e1b0-6d23-4f58-9a01-7c3e5b8d2f64
@@ -2432,7 +2511,8 @@ mod tests {
         grok_document_title_signal, grok_external_auth_handoff_needs_app_return,
         grok_external_auth_return_is_current, grok_popup_recovery_claim_is_current,
         grok_popup_recovery_needed, grok_reconnect_allowed, grok_stale_reason,
-        parse_grok_bridge_drive_outcome, physical_bounds, popup_initial_title,
+        isolated_provider_stores_available, parse_grok_bridge_drive_outcome,
+        parse_macos_product_version, physical_bounds, popup_initial_title,
         prepare_grok_external_auth_return, prepare_grok_navigation, prepare_grok_popup_recovery,
         provider_data_store_identifier, provider_document_allows_generic_eval,
         provider_show_should_focus, provider_state_allows_control_eval,
@@ -2442,8 +2522,8 @@ mod tests {
         should_reset_bridge_on_boot_rotation, staleness_action, state_with, Bounds,
         GrokBridgeDriveOutcome, GrokBridgeDriveResult, GrokBridgeHostAction,
         GrokDocumentTitleSignal, GrokNavigationOwner, NewWindowAction, StalenessAction,
-        CHALLENGE_SIGNALS_JSON, GROK_APP_TITLE_UNCONFIRMED_REASON, PERMISSION_SHIM_JS,
-        PROVIDER_BROWSER_ARGS,
+        CHALLENGE_SIGNALS_JSON, GROK_APP_TITLE_UNCONFIRMED_REASON, MACOS_14_REQUIRED,
+        PERMISSION_SHIM_JS, PROVIDER_BROWSER_ARGS,
     };
 
     static GROK_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -2458,6 +2538,24 @@ mod tests {
         assert!(PROVIDER_BROWSER_ARGS.contains("--disable-renderer-backgrounding"));
         assert!(PROVIDER_BROWSER_ARGS.contains("--disable-backgrounding-occluded-windows"));
         assert!(PROVIDER_BROWSER_ARGS.contains("msSmartScreenProtection"));
+    }
+
+    #[test]
+    fn macos_14_is_required_for_separate_provider_stores() {
+        assert!(isolated_provider_stores_available(Some(14)));
+        assert!(isolated_provider_stores_available(Some(15)));
+        assert!(isolated_provider_stores_available(Some(26)));
+        assert!(!isolated_provider_stores_available(Some(13)));
+        assert!(!isolated_provider_stores_available(None));
+        assert!(MACOS_14_REQUIRED.contains("macOS 14+ required"));
+        assert_eq!(parse_macos_product_version("14.6.1"), Some(14));
+        assert_eq!(parse_macos_product_version("13.7\n"), Some(13));
+        assert_eq!(
+            parse_macos_product_version("<key>ProductVersion</key>\n<string>14.5</string>"),
+            Some(14)
+        );
+        assert_eq!(parse_macos_product_version(""), None);
+        assert_eq!(parse_macos_product_version("not a version"), None);
     }
 
     #[test]

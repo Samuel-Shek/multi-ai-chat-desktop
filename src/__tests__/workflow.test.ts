@@ -791,11 +791,13 @@ describe('workflow engine', () => {
       if (sentPrompts.length === 1) throw new Error('skip this step');
       publishBridgeMessage(done(provider, `answer-${sentPrompts.length}`));
     });
-    const run = runWorkflow({ text: 'question', mode: 'debate', roles: DEFAULT_DEBATE_ROLES });
+    const run = runWorkflow({ text: 'question', mode: 'coding', roles: DEFAULT_CODING_ROLES });
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(1));
     chooseStepTimeoutAction('skip');
     await expect(run).resolves.toEqual({ ok: true });
-    expect(sentPrompts[1]).toBe(PROMPTS.debate.con('question', SKIP_RESPONSE));
+    expect(sentPrompts[1]).toBe(
+      PROMPTS.coding.reviewerSpec('question', SKIP_RESPONSE, providerName(DEFAULT_CODING_ROLES.planner)),
+    );
   });
 
   it('cancel action aborts, stop-clicks, tears down waiters, and rejects the step', async () => {

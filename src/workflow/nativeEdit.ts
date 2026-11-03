@@ -5,7 +5,7 @@ import { eventFromProviderSend } from '../diagnostics/eventLog';
 import { recordEventLog } from '../diagnostics/eventLogStore';
 import { clearInFlight, markInFlight } from './cancel';
 import { reserveTurn } from './state';
-import { rejectWaiter, waitForResponse } from './waitForResponse';
+import { consumeTruncated, rejectWaiter, waitForResponse } from './waitForResponse';
 
 export async function fillAndAwaitNativeSend(
   provider: AIProvider,
@@ -27,6 +27,7 @@ export async function fillAndAwaitNativeSend(
   }
   try {
     const response = await responsePromise;
+    consumeTruncated(provider, turn);
     return { response, turn };
   } finally {
     clearInFlight(provider);

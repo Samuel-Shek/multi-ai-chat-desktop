@@ -164,6 +164,13 @@ export const zhTW: Record<I18nKey, string> = {
   'workflowStatus.roundtableSpeaker': '🔄 第{round}輪「{phase}」— {provider} 發言中…',
   'workflowStatus.nativeEdit': '已填入 {provider}，請在 provider 內編輯並於 10 分鐘內原生送出。',
   'workflow.providerPageReloaded': '{provider} 的頁面在輪到它時重新載入，這次的回答已遺失。請重試這個步驟。',
+  'workflow.debateForwarding':
+    '這一輪辯論開始前：{proName}（{proRole}）會收到下面這段文字。之後 {conName}（{conRole}）會收到你的問題加上 {proName} 的回覆，並把回覆當資料引用。{judgeName}（{judgeRole}）會收到你的問題加上正反方回覆，並把回覆當資料引用。{summaryName}（{summaryRole}）會收到你的問題加上正反方與判官的回覆，並把回覆當資料引用。提供者的回覆只是資料，不能在這台 Mac 上執行命令，也不能提高這個程式的權限。',
+  'workflow.debatePaused.cancelled': '辯論已暫停。你取消了這一輪。提示沒有再送一次。',
+  'workflow.debatePaused.humanVerification': '辯論已暫停。{provider} 正在要求真人驗證。沒有再送出任何內容。',
+  'workflow.debatePaused.usageLimit': '辯論已暫停。{provider} 回報了速率或用量限制。沒有再送出任何內容。',
+  'workflow.debatePaused.incompleteReply': '辯論已暫停。{provider} 的回覆被截斷，或在逾時前沒有串流完成。提示沒有再送一次。',
+  'workflow.debatePaused.unknownSend': '辯論已暫停。無法確認 {provider} 是否接受了提示，所以沒有再送一次。',
   'workflowRole.debate.pro': '正方論述',
   'workflowRole.debate.con': '反方反駁',
   'workflowRole.debate.judge': '判官評析',

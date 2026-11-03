@@ -5,7 +5,8 @@ import { host } from '../host';
 import type { Locale } from '../i18n/resolve';
 import { formatI18n, t } from '../i18n/t';
 import { abortWorkflow, getInFlightProviders } from './cancel';
-import { emitSystemError, sendWorkflowStatus } from './events';
+import { debatePauseForWorkflow } from './debatePause';
+import { emitSystemError, sendWorkflowNotice, sendWorkflowStatus } from './events';
 import { executeGraph, preflightGraph, workflowGraphs } from './graph';
 import type { PreflightResult } from './preflight';
 import { prepareWorkflowRun } from './runtime';
@@ -111,6 +112,12 @@ async function runPreparedWorkflow({
     return { ok: true };
   } catch (error) {
     await tearDownWaiters(getInFlightProviders(), { stopClick: true });
+    const pause = debatePauseForWorkflow(mode, error, locale ?? 'en');
+    if (pause) {
+      sendWorkflowStatus(pause);
+      sendWorkflowNotice(pause);
+      return { ok: true };
+    }
     emitSystemError(workflowFailureText(error, locale));
     sendWorkflowStatus('');
     return { ok: true };

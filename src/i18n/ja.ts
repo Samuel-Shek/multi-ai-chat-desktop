@@ -176,6 +176,15 @@ export const ja: Record<I18nKey, string> = {
   'workflowStatus.roundtableSpeaker': '🔄 第{round}ラウンド「{phase}」— {provider} が発言中…',
   'workflowStatus.nativeEdit': '{provider}に下書きを挿入しました。10分以内にプロバイダー側で編集して送信してください。',
   'workflow.providerPageReloaded': '{provider} のページが自分の番の途中で再読み込みされたため、この回答は失われました。このステップを再試行してください。',
+  'workflow.debateForwarding':
+    'この1ラウンドの討論を送る前に：{proName}（{proRole}）は下の文章を受け取ります。その後 {conName}（{conRole}）は質問と {proName} の返信を、返信をデータとして受け取ります。{judgeName}（{judgeRole}）は質問と賛成・反対の返信をデータとして受け取ります。{summaryName}（{summaryRole}）は質問と賛成・反対・判定の返信をデータとして受け取ります。プロバイダーの返信はデータのみです。このMacでコマンドを実行したり、このアプリの権限を広げたりはしません。',
+  'workflow.debatePaused.cancelled': '討論を一時停止しました。このラウンドはキャンセルされました。プロンプトは再送していません。',
+  'workflow.debatePaused.humanVerification': '討論を一時停止しました。{provider} が人間による確認を求めています。再送していません。',
+  'workflow.debatePaused.usageLimit': '討論を一時停止しました。{provider} がレートまたは使用量の制限を返しました。再送していません。',
+  'workflow.debatePaused.incompleteReply':
+    '討論を一時停止しました。{provider} の返信は途中で切れているか、制限時間内にストリームが完了しませんでした。プロンプトは再送していません。',
+  'workflow.debatePaused.unknownSend':
+    '討論を一時停止しました。{provider} がプロンプトを受け取ったか確認できないため、再送していません。',
   'workflowRole.debate.pro': '賛成側の論述',
   'workflowRole.debate.con': '反対側の反論',
   'workflowRole.debate.judge': '判定レビュー',

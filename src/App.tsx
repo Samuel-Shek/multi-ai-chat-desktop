@@ -27,6 +27,8 @@ import {
   type ManualFocusPointerDown,
 } from './ui/autoFocus';
 import { CheckpointCard } from './ui/CheckpointCard';
+import { PlatformNoticeBanner } from './ui/PlatformNoticeBanner';
+import { platformNoticeFromError, platformNoticeFromSettings } from './ui/platformNotice';
 import { AiSisterAvatar, AiSisterEnsembleCard } from './ui/AiSisterTheme';
 import { ConversationSidebar } from './ui/ConversationSidebar';
 import {
@@ -307,6 +309,7 @@ export default function App() {
   const [sessionSidebarCollapsed, setSessionSidebarCollapsed] = useState(loadSessionSidebarCollapsed);
   const [messages, setMessages] = useState<Bubble[]>(() => bubblesFromSession(initialConversation.active));
   const [workflowStatus, setWorkflowStatus] = useState('');
+  const [platformNotice, setPlatformNotice] = useState('');
   const [mode, setMode] = useState<ChatMode>(initialConversation.active.mode);
   const [presetId, setPresetId] = useState<WorkflowPresetId>(initialConversation.active.presetId ?? initialConversation.active.mode);
   const [presetDetailsId, setPresetDetailsId] = useState<WorkflowPresetId | undefined>();
@@ -667,6 +670,8 @@ export default function App() {
       .then((value) => {
         if (disposed) return;
         const loaded = normalizeSettings(value);
+        const notice = platformNoticeFromSettings(value);
+        if (notice) setPlatformNotice(notice);
         settingsRef.current = loaded;
         if (loaded.saveConversationContent && messagesRef.current.length === 0) {
           const stored = loadConversationSessions();
@@ -935,48 +940,69 @@ export default function App() {
     [boundsForPresentationTarget, presentationTransitionCurrent],
   );
 
+  const rememberPlatformNotice = useCallback((error: unknown) => {
+    const notice = platformNoticeFromError(error);
+    if (notice) setPlatformNotice(notice);
+    return notice;
+  }, []);
+
   const openProvider = useCallback(async (provider: AIProvider) => {
     const rect = fallbackBoundsForProvider(provider);
     resetProviderBootState(provider);
-    await host.provider.open(provider, rect);
-  }, [fallbackBoundsForProvider]);
+    try {
+      await host.provider.open(provider, rect);
+    } catch (error) {
+      rememberPlatformNotice(error);
+      throw error;
+    }
+  }, [fallbackBoundsForProvider, rememberPlatformNotice]);
 
   const ensureProviderLoadedHidden = useCallback(
     async (provider: AIProvider, bounds: DOMRectReadOnly, shouldContinue: () => boolean = () => true) => {
       if (!shouldContinue()) return;
       if (statesRef.current[provider].webview !== 'loaded') {
         resetProviderBootState(provider);
-        await host.provider.open(provider, bounds);
+        try {
+          await host.provider.open(provider, bounds);
+        } catch (error) {
+          rememberPlatformNotice(error);
+          throw error;
+        }
       }
       if (!shouldContinue()) return;
       await host.provider.park(provider, bounds);
     },
-    [],
+    [rememberPlatformNotice],
   );
 
   const restoreProvider = useCallback(
     async (provider: AIProvider) => {
-      const target = presentationRef.current[provider];
-      if (target === 'chip') return;
-      if (target === 'side') {
-        await ensureProviderLoadedHidden(
-          provider,
-          hiddenProviderLoadBounds(),
-          () => presentationRef.current[provider] === 'side',
-        );
-        return;
+      try {
+        const target = presentationRef.current[provider];
+        if (target === 'chip') return;
+        if (target === 'side') {
+          await ensureProviderLoadedHidden(
+            provider,
+            hiddenProviderLoadBounds(),
+            () => presentationRef.current[provider] === 'side',
+          );
+          return;
+        }
+        if (target === 'center' && centerSurfaceRef.current === 'text') {
+          await ensureProviderLoadedHidden(
+            provider,
+            hiddenProviderLoadBounds(),
+            () => presentationRef.current[provider] === 'center' && centerSurfaceRef.current === 'text',
+          );
+          return;
+        }
+        await openProvider(provider);
+      } catch (error) {
+        if (rememberPlatformNotice(error)) return;
+        throw error;
       }
-      if (target === 'center' && centerSurfaceRef.current === 'text') {
-        await ensureProviderLoadedHidden(
-          provider,
-          hiddenProviderLoadBounds(),
-          () => presentationRef.current[provider] === 'center' && centerSurfaceRef.current === 'text',
-        );
-        return;
-      }
-      await openProvider(provider);
     },
-    [ensureProviderLoadedHidden, openProvider],
+    [ensureProviderLoadedHidden, openProvider, rememberPlatformNotice],
   );
 
   const syncBounds = useCallback(async (provider: AIProvider) => {
@@ -2043,6 +2069,7 @@ export default function App() {
         </div>
 
         <section className="ai-sister-conversation-workspace flex min-h-0 min-w-0 flex-col border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+          <PlatformNoticeBanner notice={platformNotice} />
           <div className="ai-sister-conversation-toolbar border-b border-zinc-200 dark:border-zinc-800 pb-3">
             <div className="flex flex-wrap items-start gap-3">
               {/* The floor is what makes the row wrap: at min-w-0 this block collapses instead, so the

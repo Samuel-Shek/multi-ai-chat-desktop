@@ -20,6 +20,7 @@ interface Waiter {
 }
 
 const waiters = new Map<string, Waiter>();
+const truncatedByTurn = new Map<string, boolean>();
 let subscribed = false;
 let unsubscribeBootRotation: (() => void) | undefined;
 
@@ -44,18 +45,30 @@ function handleBridgeMessage(message: BridgeMessage): void {
   if (message.transport !== 'pull' && message.transport !== 'local') return;
   for (const waiter of [...waiters.values()]) {
     if (waiter.provider !== message.provider) continue;
-    settle(waiter, 'resolve', payloadText(message.payload));
+    const parsed = payloadText(message.payload);
+    if (parsed.truncated) truncatedByTurn.set(key(waiter.provider, waiter.turn), true);
+    settle(waiter, 'resolve', parsed.text);
     return;
   }
 }
 
-function payloadText(payload: unknown): string {
-  if (typeof payload === 'string') return payload;
-  if (payload && typeof payload === 'object' && 'text' in payload) {
-    const typed = payload as { text?: unknown };
-    return typeof typed.text === 'string' ? typed.text : JSON.stringify(payload);
+function payloadText(payload: unknown): { text: string; truncated: boolean } {
+  if (typeof payload === 'string') return { text: payload, truncated: false };
+  if (payload && typeof payload === 'object') {
+    const typed = payload as { text?: unknown; truncated?: unknown };
+    const truncated = typed.truncated === true;
+    if ('text' in payload) {
+      return { text: typeof typed.text === 'string' ? typed.text : JSON.stringify(payload), truncated };
+    }
+    return { text: JSON.stringify(payload), truncated };
   }
-  return JSON.stringify(payload ?? '');
+  return { text: JSON.stringify(payload ?? ''), truncated: false };
+}
+
+export function consumeTruncated(provider: AIProvider, turn: number): boolean {
+  const flagged = truncatedByTurn.get(key(provider, turn)) === true;
+  truncatedByTurn.delete(key(provider, turn));
+  return flagged;
 }
 
 export function waitForResponse(provider: AIProvider, turn: number): Promise<string> {
@@ -143,6 +156,7 @@ export function resetWaitForResponseForTests(): void {
     if (waiter.timer !== undefined) globalThis.clearTimeout(waiter.timer);
   }
   waiters.clear();
+  truncatedByTurn.clear();
   unsubscribeBootRotation?.();
   unsubscribeBootRotation = undefined;
   subscribed = false;

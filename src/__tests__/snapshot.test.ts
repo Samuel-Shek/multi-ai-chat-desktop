@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AIProvider, BridgeMessage, ProviderState } from '../../shared/types';
-import { DEFAULT_DEBATE_ROLES, PROMPTS } from '../../shared/constants';
+import { AI_PROVIDERS, DEFAULT_CODING_ROLES, DEFAULT_DEBATE_ROLES, PROMPTS } from '../../shared/constants';
 import { publishBridgeMessage, resetBusForTests } from '../bridge/bus';
 import { resetBridgePullForTests } from '../bridge/pull';
 import { host } from '../host';
 import { resetCancelState } from '../workflow/cancel';
 import { resetWorkflowRuntimeForTests, runWorkflow } from '../workflow';
+import { DebatePausedError } from '../workflow/debatePause';
 import { debateGraph, executeGraph } from '../workflow/graph';
 import { flushSessionCheckpointForTests, resetSessionCheckpointForTests } from '../workflow/sessionCheckpoint';
 import { resetAdapterVersionsForTests } from '../workflow/snapshot/adapterVersions';
@@ -278,7 +279,7 @@ describe('workflow execution snapshots', () => {
     });
   });
 
-  it('records serial send failures as error steps before rethrowing the original error', async () => {
+  it('records a debate send failure as an error step and pauses without resending', async () => {
     const conError = new Error('con send failed');
     vi.mocked(host.provider.send).mockImplementation(async (provider) => {
       if (provider === DEFAULT_DEBATE_ROLES.pro) {
@@ -290,10 +291,12 @@ describe('workflow execution snapshots', () => {
     });
 
     const run = executeGraph(debateGraph, { text: 'serial error question', roles: DEFAULT_DEBATE_ROLES });
+    const rejection = run.catch((error: unknown) => error);
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(2));
-    chooseStepTimeoutAction('cancel');
 
-    await expect(run).rejects.toBe(conError);
+    const error = await rejection;
+    expect(error).toBeInstanceOf(DebatePausedError);
+    expect(error).toMatchObject({ reason: 'unknown-send', message: 'con send failed', provider: DEFAULT_DEBATE_ROLES.con });
     expect(getCurrentSnapshot()).toBeUndefined();
     const snapshot = getLastSnapshot();
     expect(snapshot?.completedAt).toEqual(expect.any(String));
@@ -314,19 +317,21 @@ describe('workflow execution snapshots', () => {
       publishBridgeMessage(done(provider, `${provider}-answer`));
     });
 
-    const run = runWorkflow({ text: 'skip question', mode: 'debate', roles: DEFAULT_DEBATE_ROLES });
+    const run = runWorkflow({ text: 'skip question', mode: 'coding', roles: DEFAULT_CODING_ROLES });
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(1));
     chooseStepTimeoutAction('skip');
     await expect(run).resolves.toEqual({ ok: true });
 
-    const step = getLastSnapshot()?.steps.find((item) => item.nodeId === 'pro');
+    const step = getLastSnapshot()?.steps.find((item) => item.nodeId === 'plannerSpec');
     expect(step).toMatchObject({
-      provider: DEFAULT_DEBATE_ROLES.pro,
+      provider: DEFAULT_CODING_ROLES.planner,
       status: 'skipped',
       outputRef: { text: SKIP_RESPONSE },
     });
     expect(step?.completedAt).toEqual(expect.any(String));
-    expect(sentPrompts[1]).toBe(PROMPTS.debate.con('skip question', SKIP_RESPONSE));
+    expect(sentPrompts[1]).toBe(
+      PROMPTS.coding.reviewerSpec('skip question', SKIP_RESPONSE, AI_PROVIDERS[DEFAULT_CODING_ROLES.planner].name),
+    );
   });
 
   it('completes a partial snapshot when CANCEL_WORKFLOW interrupts a run', async () => {

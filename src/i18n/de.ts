@@ -176,6 +176,17 @@ export const de: Record<I18nKey, string> = {
   'workflowStatus.roundtableSpeaker': '🔄 Runde {round} „{phase}“ — {provider} spricht…',
   'workflowStatus.nativeEdit': 'Entwurf für {provider} eingefügt. Innerhalb von 10 Minuten beim Anbieter bearbeiten und senden.',
   'workflow.providerPageReloaded': 'Die Seite von {provider} wurde während dieses Schritts neu geladen, daher ist diese Antwort verloren. Wiederholen Sie diesen Schritt.',
+  'workflow.debateForwarding':
+    'Bevor diese eine Debattenrunde etwas sendet: {proName} ({proRole}) erhält den Text unten. {conName} ({conRole}) erhält später die Frage plus die Antwort von {proName}, als Daten zitiert. {judgeName} ({judgeRole}) erhält später die Frage plus die Pro- und Contra-Antworten, als Daten zitiert. {summaryName} ({summaryRole}) erhält später die Frage plus die Pro-, Contra- und Richterantworten, als Daten zitiert. Anbieterantworten sind nur Daten. Sie können auf diesem Mac keine Befehle ausführen und die Rechte dieser App nicht erweitern.',
+  'workflow.debatePaused.cancelled': 'Debatte pausiert. Sie haben diese Runde abgebrochen. Der Prompt wurde nicht erneut gesendet.',
+  'workflow.debatePaused.humanVerification':
+    'Debatte pausiert. {provider} verlangt eine menschliche Überprüfung. Es wurde nichts erneut gesendet.',
+  'workflow.debatePaused.usageLimit':
+    'Debatte pausiert. {provider} hat ein Raten- oder Nutzungslimit gemeldet. Es wurde nichts erneut gesendet.',
+  'workflow.debatePaused.incompleteReply':
+    'Debatte pausiert. Die Antwort von {provider} war abgeschnitten oder der Stream endete nicht vor dem Timeout. Der Prompt wurde nicht erneut gesendet.',
+  'workflow.debatePaused.unknownSend':
+    'Debatte pausiert. Es ist nicht bestätigt, dass {provider} den Prompt angenommen hat, daher wurde er nicht erneut gesendet.',
   'workflowRole.debate.pro': 'Pro-Argument',
   'workflowRole.debate.con': 'Gegenargument',
   'workflowRole.debate.judge': 'Beurteilung',

@@ -4,7 +4,8 @@ import type { Locale } from '../../i18n/resolve';
 import { formatI18n, t } from '../../i18n/t';
 import { abortWorkflow, checkAborted, getInFlightProviders } from '../cancel';
 import { awaitCheckpoint } from '../checkpoint';
-import { sendRoleAssignment, sendWorkflowStatus } from '../events';
+import { debateForwardingNotice } from '../debatePause';
+import { sendRoleAssignment, sendWorkflowNotice, sendWorkflowStatus } from '../events';
 import { fillAndAwaitNativeSend } from '../nativeEdit';
 import { providerResponseError, ProviderResponseError } from '../providerResponse';
 import { reserveProviderTurn, sendAndWait } from '../sendAndWait';
@@ -103,6 +104,15 @@ export async function executeGraph(graph: WorkflowGraph, params: ExecuteGraphPar
   const abortAware = graph.preflight.kind !== 'free';
   let completedCleanly = false;
   try {
+    if (graph.id === 'debate') {
+      const openingNode = graph.nodes[graph.start];
+      const openingProvider = context.roles.get('pro');
+      const opening =
+        openingNode?.kind === 'step'
+          ? renderPromptSpec(openingNode.prompt, context, graph.start, openingProvider)
+          : context.question;
+      sendWorkflowNotice(debateForwardingNotice(context.roles, opening, context.locale));
+    }
     addReady(context, graph.start);
     addParallelSiblings(context, graph.start);
 
@@ -314,7 +324,10 @@ function prepareStepNode(
         const result =
           checkpointAction === 'native-edit'
             ? await fillAndAwaitNativeSend(provider, input, turn)
-            : await runStep(provider, input, turn, { recoverProviderErrors: context.graph.id === 'brainstorm' });
+            : await runStep(provider, input, turn, {
+                recoverProviderErrors: context.graph.id === 'brainstorm',
+                pauseInsteadOfRetry: context.graph.id === 'debate',
+              });
         const responseError = providerResponseError(provider, result.response);
         if (responseError) throw responseError;
         recordStep({
