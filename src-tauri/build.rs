@@ -16,7 +16,6 @@ fn main() {
             "dev_log",
             "adapter_push",
             "report_broken",
-            "open_adapter_issue",
             "settings_get",
             "settings_set",
             "export_markdown",

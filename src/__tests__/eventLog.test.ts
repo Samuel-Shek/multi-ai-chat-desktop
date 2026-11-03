@@ -92,17 +92,17 @@ describe('event log reducer', () => {
     },
   );
 
-  it('filters mixed diagnostics to Meta AI events and sanitized copy text without changing the source log', () => {
+  it('filters mixed diagnostics to Gemini events and sanitized copy text without changing the source log', () => {
     const responseText = '[Error: Meta guest session reached a provider gate]';
     const event = eventFromBridgeMessage({
       v: 1,
       action: 'RESPONSE_DONE',
-      provider: 'meta',
+      provider: 'gemini',
       payload: responseText,
       transport: 'pull',
     });
 
-    const otherProviders = ['chatgpt', 'claude', 'gemini', 'grok'] as const;
+    const otherProviders = ['chatgpt', 'grok'] as const;
     const mixedEvents: EventLogEvent[] = [
       ...otherProviders.map((provider) => ({
         ts: 100,
@@ -111,28 +111,28 @@ describe('event log reducer', () => {
         summary: `${provider}-only`,
       })),
       { ts: 200, kind: 'workflow-step', summary: 'global-only' },
-      { ts: 201, provider: 'meta', kind: 'provider-state', summary: 'Meta AI state: logged_out' },
+      { ts: 201, provider: 'gemini', kind: 'provider-state', summary: 'Gemini state: logged_out' },
     ];
     const events = Object.freeze(appendEvent(mixedEvents, event!, { now: () => 234 }));
-    const filtered = filterEventLogByProvider(events, 'meta');
+    const filtered = filterEventLogByProvider(events, 'gemini');
     const copied = formatEventLogText(filtered);
 
-    expect(filtered).toEqual([events[5], events[6]]);
-    expect(filtered[1]).toMatchObject({ provider: 'meta', kind: 'response-error' });
-    expect(filtered[1].summary).toBe(`Meta AI response error (${responseText.length} chars)`);
-    expect(copied).toContain('[Meta AI]');
-    expect(copied).toContain('Meta AI state: logged_out');
-    expect(copied).toContain('Meta AI response error');
+    expect(filtered).toEqual([events[3], events[4]]);
+    expect(filtered[1]).toMatchObject({ provider: 'gemini', kind: 'response-error' });
+    expect(filtered[1].summary).toBe(`Gemini response error (${responseText.length} chars)`);
+    expect(copied).toContain('[Gemini]');
+    expect(copied).toContain('Gemini state: logged_out');
+    expect(copied).toContain('Gemini response error');
     for (const provider of otherProviders) expect(copied).not.toContain(`${provider}-only`);
     expect(copied).not.toContain('global-only');
     expect(copied).not.toContain(responseText);
     expect(copied).not.toContain('guest session');
-    expect(filterEventLogByProvider(events, 'all')).toEqual([...mixedEvents, events[6]]);
+    expect(filterEventLogByProvider(events, 'all')).toEqual([...events]);
   });
 
   it('stores prompt length instead of prompt text', () => {
     const prompt = 'private user prompt';
-    const events = appendEvent([], eventFromProviderSend('claude', prompt), { now: () => 456 });
+    const events = appendEvent([], eventFromProviderSend('grok', prompt), { now: () => 456 });
 
     expect(events[0].detail).toMatchObject({ promptChars: prompt.length });
     expect(formatEventLogText(events)).not.toContain(prompt);
@@ -204,7 +204,7 @@ describe('event log reducer', () => {
     const started = eventFromBridgeMessage({
       v: 1,
       action: 'STATUS_REPORT',
-      provider: 'meta',
+      provider: 'gemini',
       bootId: 'boot-1',
       seq: 4,
       payload: { fill: 'start', fillChars: 21233, text: prompt, prompt, content: prompt },
@@ -213,15 +213,15 @@ describe('event log reducer', () => {
     const finished = eventFromBridgeMessage({
       v: 1,
       action: 'STATUS_REPORT',
-      provider: 'meta',
+      provider: 'gemini',
       bootId: 'boot-1',
       seq: 5,
       payload: { fill: 'done', fillChars: 21233, fillMs: 73412, text: prompt, prompt },
       transport: 'title',
     });
 
-    expect(started?.summary).toBe('Meta AI composer fill started (21233 chars)');
-    expect(finished?.summary).toBe('Meta AI composer fill finished (21233 chars in 73412 ms)');
+    expect(started?.summary).toBe('Gemini composer fill started (21233 chars)');
+    expect(finished?.summary).toBe('Gemini composer fill finished (21233 chars in 73412 ms)');
     expect(started?.detail).toMatchObject({ fill: 'start', fillChars: 21233 });
     expect(started?.detail).not.toHaveProperty('fillMs');
     expect(finished?.detail).toMatchObject({ fill: 'done', fillChars: 21233, fillMs: 73412 });
@@ -230,20 +230,20 @@ describe('event log reducer', () => {
     recordEventLog(finished);
     expect(JSON.stringify(getEventLogSnapshot())).not.toContain(prompt);
     expect(getEventLogSnapshot().map((event) => event.summary)).toEqual([
-      'Meta AI composer fill started (21233 chars)',
-      'Meta AI composer fill finished (21233 chars in 73412 ms)',
+      'Gemini composer fill started (21233 chars)',
+      'Gemini composer fill finished (21233 chars in 73412 ms)',
     ]);
   });
 
   it('formats only provider-filtered events when copying a filtered log', () => {
     const events = [
       { ts: 1, provider: 'chatgpt' as const, kind: 'provider-state' as const, summary: 'chatgpt-only' },
-      { ts: 2, provider: 'claude' as const, kind: 'provider-state' as const, summary: 'claude-only' },
+      { ts: 2, provider: 'grok' as const, kind: 'provider-state' as const, summary: 'grok-only' },
     ].reduce<EventLogEvent[]>((current, event) => appendEvent(current, event), []);
 
-    const copied = formatEventLogText(filterEventLogByProvider(events, 'claude'));
+    const copied = formatEventLogText(filterEventLogByProvider(events, 'grok'));
 
-    expect(copied).toContain('claude-only');
+    expect(copied).toContain('grok-only');
     expect(copied).not.toContain('chatgpt-only');
   });
 

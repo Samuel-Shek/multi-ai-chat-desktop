@@ -1135,8 +1135,11 @@ pub async fn provider_open(
     };
     // Every provider is parked offscreen outside its active pane. Preserve the shipped liveness
     // tuning so provider timers and renderers keep running while hidden.
+    let data_store_identifier = provider_data_store_identifier(&provider)
+        .ok_or_else(|| format!("no data store identifier for {provider}"))?;
     let builder = builder
         .data_directory(profile_dir)
+        .data_store_identifier(data_store_identifier)
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .additional_browser_args(PROVIDER_BROWSER_ARGS)
         .on_document_title_changed(move |webview, title| {
@@ -1270,7 +1273,7 @@ pub async fn provider_open(
                         "provider-popup-{}",
                         POPUP_SEQ.fetch_add(1, Ordering::Relaxed)
                     );
-                    let builder = tauri::WebviewWindowBuilder::new(
+                    let mut builder = tauri::WebviewWindowBuilder::new(
                         &popup_app,
                         &label,
                         WebviewUrl::External("about:blank".parse().expect("static url")),
@@ -1280,6 +1283,9 @@ pub async fn provider_open(
                     .on_document_title_changed(|window, title| {
                         let _ = window.set_title(&title);
                     });
+                    if let Some(identifier) = provider_data_store_identifier(&popup_provider) {
+                        builder = builder.data_store_identifier(identifier);
+                    }
                     match builder.build() {
                         Ok(window) => {
                             if let Some(observed_epoch) = recovery_epoch {
@@ -1383,12 +1389,30 @@ fn close_provider(app: &AppHandle, provider: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn close_standby_provider(app: &AppHandle, provider: &str) -> Result<(), String> {
-    let has_webview = app.get_webview(&provider_label(provider)).is_some();
-    if !has_webview && current_state(provider).webview == "none" {
-        return Ok(());
+/// Stable WKWebsiteDataStore UUIDs (macOS 14+). The same bytes are used for a
+/// provider pane and its login popups so cookies persist across restarts and
+/// stay out of the other providers' stores. `data_directory` does not isolate
+/// WKWebView profiles; this identifier does. On macOS older than 14, Wry falls
+/// back to the shared default store.
+pub(crate) fn provider_data_store_identifier(provider: &str) -> Option<[u8; 16]> {
+    match provider {
+        // c4a7e1b0-6d23-4f58-9a01-7c3e5b8d2f64
+        "chatgpt" => Some([
+            0xc4, 0xa7, 0xe1, 0xb0, 0x6d, 0x23, 0x4f, 0x58, 0x9a, 0x01, 0x7c, 0x3e, 0x5b, 0x8d,
+            0x2f, 0x64,
+        ]),
+        // 9b2d6f14-8e70-4c3a-b591-0d6a4e7c1f83
+        "grok" => Some([
+            0x9b, 0x2d, 0x6f, 0x14, 0x8e, 0x70, 0x4c, 0x3a, 0xb5, 0x91, 0x0d, 0x6a, 0x4e, 0x7c,
+            0x1f, 0x83,
+        ]),
+        // e85c3a27-1f94-4b60-8d52-6a0c9e3b7d15
+        "gemini" => Some([
+            0xe8, 0x5c, 0x3a, 0x27, 0x1f, 0x94, 0x4b, 0x60, 0x8d, 0x52, 0x6a, 0x0c, 0x9e, 0x3b,
+            0x7d, 0x15,
+        ]),
+        _ => None,
     }
-    close_provider(app, provider)
 }
 
 #[tauri::command]
@@ -2410,15 +2434,16 @@ mod tests {
         grok_popup_recovery_needed, grok_reconnect_allowed, grok_stale_reason,
         parse_grok_bridge_drive_outcome, physical_bounds, popup_initial_title,
         prepare_grok_external_auth_return, prepare_grok_navigation, prepare_grok_popup_recovery,
-        provider_document_allows_generic_eval, provider_show_should_focus,
-        provider_state_allows_control_eval, provider_uses_document_start_bridge,
-        provider_uses_permission_shim, record_grok_bridge_challenge, reset_state_for_page_load,
-        retire_grok_document, runtime, should_drive_grok_bridge,
-        should_drive_grok_bridge_from_background, should_reset_bridge_on_boot_rotation,
-        staleness_action, state_with, Bounds, GrokBridgeDriveOutcome, GrokBridgeDriveResult,
-        GrokBridgeHostAction, GrokDocumentTitleSignal, GrokNavigationOwner, NewWindowAction,
-        StalenessAction, CHALLENGE_SIGNALS_JSON, GROK_APP_TITLE_UNCONFIRMED_REASON,
-        PERMISSION_SHIM_JS, PROVIDER_BROWSER_ARGS,
+        provider_data_store_identifier, provider_document_allows_generic_eval,
+        provider_show_should_focus, provider_state_allows_control_eval,
+        provider_uses_document_start_bridge, provider_uses_permission_shim,
+        record_grok_bridge_challenge, reset_state_for_page_load, retire_grok_document, runtime,
+        should_drive_grok_bridge, should_drive_grok_bridge_from_background,
+        should_reset_bridge_on_boot_rotation, staleness_action, state_with, Bounds,
+        GrokBridgeDriveOutcome, GrokBridgeDriveResult, GrokBridgeHostAction,
+        GrokDocumentTitleSignal, GrokNavigationOwner, NewWindowAction, StalenessAction,
+        CHALLENGE_SIGNALS_JSON, GROK_APP_TITLE_UNCONFIRMED_REASON, PERMISSION_SHIM_JS,
+        PROVIDER_BROWSER_ARGS,
     };
 
     static GROK_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -2436,6 +2461,24 @@ mod tests {
     }
 
     #[test]
+    fn provider_data_stores_are_stable_distinct_uuids() {
+        let chatgpt = provider_data_store_identifier("chatgpt").unwrap();
+        let grok = provider_data_store_identifier("grok").unwrap();
+        let gemini = provider_data_store_identifier("gemini").unwrap();
+        assert_ne!(chatgpt, grok);
+        assert_ne!(chatgpt, gemini);
+        assert_ne!(grok, gemini);
+        assert_ne!(chatgpt, [0; 16]);
+        assert!(provider_data_store_identifier("claude").is_none());
+        assert!(provider_data_store_identifier("meta").is_none());
+        // RFC 4122 version 4 and the RFC variant bits.
+        for id in [chatgpt, grok, gemini] {
+            assert_eq!(id[6] & 0xf0, 0x40, "uuid version nibble");
+            assert_eq!(id[8] & 0xc0, 0x80, "uuid variant bits");
+        }
+    }
+
+    #[test]
     fn provider_show_requires_an_explicit_focus_request() {
         assert!(!provider_show_should_focus(None));
         assert!(!provider_show_should_focus(Some(false)));
@@ -2446,7 +2489,7 @@ mod tests {
     fn grok_keeps_core_web_apis_unmodified_for_cloudflare_challenges() {
         assert!(!provider_uses_permission_shim("grok"));
         assert!(!provider_uses_document_start_bridge("grok"));
-        for provider in ["chatgpt", "claude", "gemini"] {
+        for provider in ["chatgpt", "gemini"] {
             assert!(provider_uses_permission_shim(provider));
             assert!(provider_uses_document_start_bridge(provider));
         }

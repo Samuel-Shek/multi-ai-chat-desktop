@@ -466,35 +466,9 @@ class InactiveSendOperationError extends Error {
     return true;
   }
 
-  function queryFirstUsable(selectors: string[] = []): Element | null {
-    for (const selector of selectors) {
-      const matches = document.querySelectorAll(selector);
-      for (const match of matches) {
-        if (isComposerUsable(match)) return match;
-      }
-    }
-    return null;
-  }
-
-  function isComposerUsable(element: Element): boolean {
-    const html = element as HTMLElement & { disabled?: boolean; readOnly?: boolean; inert?: boolean };
-    return (
-      isElementVisible(element) &&
-      !isDisabled(element) &&
-      !html.readOnly &&
-      !html.hasAttribute('readonly') &&
-      html.getAttribute('aria-readonly') !== 'true' &&
-      !html.inert &&
-      !element.closest('[inert]')
-    );
-  }
-
   function queryInput(activeAdapter: AdapterConfig): Element | null {
     if (activeAdapter.provider === 'grok') {
       return queryLastVisible([...GROK_LIVE_TEXTAREA_SELECTORS, ...activeAdapter.inputSelectors]);
-    }
-    if (activeAdapter.provider === 'meta') {
-      return queryFirstUsable(activeAdapter.inputSelectors);
     }
     return queryFirst(activeAdapter.inputSelectors);
   }
@@ -544,12 +518,7 @@ class InactiveSendOperationError extends Error {
     let login: 'logged_in' | 'logged_out' | 'blocked' = 'logged_out';
     if (isProviderChallengeActive(adapter.provider)) {
       login = 'blocked';
-    } else if (adapter.provider === 'meta' && queryInput(adapter) !== null) {
-      // A usable composer wins. After Facebook/Instagram login the page can still
-      // expose a login control or an inert prehydration field beside the real editor.
-      login = 'logged_in';
-    } else if (hasDetector(adapter.loggedOutDetectors) || adapter.provider === 'meta') {
-      // Meta does not treat a visible but gated composer, or Send alone, as logged in.
+    } else if (hasDetector(adapter.loggedOutDetectors)) {
       login = 'logged_out';
     } else if (
       hasDetector(adapter.loginDetectors) ||
@@ -1058,7 +1027,7 @@ class InactiveSendOperationError extends Error {
     sendOperation: number,
     allowComposerRestore: boolean,
   ): Promise<Element | null> {
-    if (!['chatgpt', 'grok', 'meta'].includes(activeAdapter.provider)) return stagedInput;
+    if (!['chatgpt', 'grok'].includes(activeAdapter.provider)) return stagedInput;
     const provider = activeAdapter.provider;
     const liveInput = await retryLookup(() => queryInput(activeAdapter), {
       intervalMs: SELECTOR_RETRY_INTERVAL_MS,

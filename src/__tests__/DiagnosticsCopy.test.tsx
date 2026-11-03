@@ -19,7 +19,7 @@ vi.mock('react', async (importOriginal) => {
 });
 vi.mock('../i18n/context', () => ({ useI18n: () => ({ t: (key: Parameters<typeof t>[0]) => t(key, 'en'), locale: 'en' }) }));
 vi.mock('../ui/useEventLog', () => ({ useEventLog: () => [
-  { ts: 1, provider: 'meta', kind: 'provider-state', summary: 'meta-only' },
+  { ts: 1, provider: 'gemini', kind: 'provider-state', summary: 'gemini-only' },
   { ts: 2, provider: 'grok', kind: 'provider-state', summary: 'grok-only' },
 ] }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -102,7 +102,7 @@ describe('diagnostics copy completion scope', () => {
     if (oldResult === 'success') writeText.mockRejectedValueOnce(new Error('current copy denied'));
     else writeText.mockResolvedValueOnce(undefined);
     const ui = harness(writeText);
-    ui.select('meta'); ui.copy();
+    ui.select('gemini'); ui.copy();
     ui.select('grok'); ui.copy();
     const currentNotice = oldResult === 'success' ? 'Copy failed' : 'Copied';
     await vi.waitFor(() => expect(ui.hasNotice(currentNotice)).toBe(true));
@@ -110,24 +110,24 @@ describe('diagnostics copy completion scope', () => {
     else old.reject(new Error('old copy denied'));
     await old.promise.catch(() => undefined);
     expect(ui.hasNotice(currentNotice)).toBe(true);
-    expect(writeText.mock.calls[0][0]).toContain('meta-only');
+    expect(writeText.mock.calls[0][0]).toContain('gemini-only');
     expect(writeText.mock.calls[0][0]).not.toContain('grok-only');
     expect(writeText.mock.calls[1][0]).toContain('grok-only');
-    expect(writeText.mock.calls[1][0]).not.toContain('meta-only');
+    expect(writeText.mock.calls[1][0]).not.toContain('gemini-only');
   });
 
   it('invalidates a pending copy even after switching away and back to the same provider', async () => {
     const old = deferred();
     const ui = harness(vi.fn().mockReturnValue(old.promise));
-    ui.select('meta'); ui.copy();
-    ui.select('grok'); ui.select('meta');
+    ui.select('gemini'); ui.copy();
+    ui.select('grok'); ui.select('gemini');
     old.resolve(); await old.promise;
     expect(ui.hasNotice('Copy log')).toBe(true);
   });
 
   it('clears an already completed copy notice when the provider changes', async () => {
     const ui = harness();
-    ui.select('meta'); ui.copy();
+    ui.select('gemini'); ui.copy();
     await vi.waitFor(() => expect(ui.hasNotice('Copied')).toBe(true));
     ui.select('grok');
     expect(ui.hasNotice('Copy log')).toBe(true);
@@ -136,7 +136,7 @@ describe('diagnostics copy completion scope', () => {
   it('keeps the newer copy notice when requests for the same provider settle out of order', async () => {
     const old = deferred();
     const ui = harness(vi.fn().mockReturnValueOnce(old.promise).mockRejectedValueOnce(new Error('new copy denied')));
-    ui.select('meta'); ui.copy(); ui.copy();
+    ui.select('gemini'); ui.copy(); ui.copy();
     await vi.waitFor(() => expect(ui.hasNotice('Copy failed')).toBe(true));
     old.resolve(); await old.promise;
     expect(ui.hasNotice('Copy failed')).toBe(true);

@@ -47,7 +47,7 @@ vi.mock('../host', () => ({
   },
 }));
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini', 'grok'];
 const SNAPSHOT_ID_PATTERN = /^snapshot-[0-9a-f-]{36}$/;
 
 function state(provider: AIProvider, sendable = true): ProviderState {
@@ -191,7 +191,7 @@ describe('workflow execution snapshots', () => {
 
   it('records adapter versions only for updated providers used by the run', async () => {
     publishBridgeMessage(adapterUpdate('chatgpt', 11));
-    publishBridgeMessage(adapterUpdate('claude', 22));
+    publishBridgeMessage(adapterUpdate('grok', 22));
     vi.mocked(host.provider.send).mockImplementation(async (provider) => {
       publishBridgeMessage(done(provider, `${provider}-answer`));
     });

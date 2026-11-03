@@ -27,7 +27,9 @@ export const DEFAULT_MODE_ROLE_ASSIGNMENTS: ModeRoleAssignments = {
 
 // v1.7-v1.8 duplicated one provider in each setup to keep Grok optional. This
 // table is consumed only by the versioned, one-time settings migration below.
-const LEGACY_THREE_PROVIDER_DEFAULTS: ModeRoleAssignments = {
+// Historical upstream defaults included Claude. Stored settings that still match them
+// exactly are replaced with this fork's three-provider defaults.
+const LEGACY_THREE_PROVIDER_DEFAULTS: Record<keyof ModeRoleAssignments, Record<string, string>> = {
   debate: { pro: 'chatgpt', con: 'claude', judge: 'gemini', summary: 'gemini' },
   consult: { first: 'chatgpt', second: 'gemini', reviewer: 'claude', summary: 'gemini' },
   coding: { planner: 'gemini', reviewer: 'chatgpt', coder: 'claude', tester: 'chatgpt' },
@@ -114,7 +116,7 @@ export function migrateLegacyModeRoleAssignments(
   for (const mode of Object.keys(MODE_ROLE_FIELDS) as (keyof ModeRoleAssignments)[]) {
     if (!input[mode] || typeof input[mode] !== 'object') continue;
     const supplied = input[mode] as Record<string, unknown>;
-    const legacyDefaults = LEGACY_THREE_PROVIDER_DEFAULTS[mode] as unknown as Record<string, AIProvider>;
+    const legacyDefaults = LEGACY_THREE_PROVIDER_DEFAULTS[mode];
     const isExactLegacyDefault = MODE_ROLE_FIELDS[mode].every((role) => supplied[role] === legacyDefaults[role]);
     if (isExactLegacyDefault) {
       output[mode] = { ...(fallback[mode] as unknown as Record<string, AIProvider>) };

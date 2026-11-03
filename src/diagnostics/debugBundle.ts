@@ -12,9 +12,8 @@ import {
 export const DEBUG_BUNDLE_SETTINGS_ALLOWLIST = [
   'language',
   'responseLanguage',
-  'adapterBaseUrl',
-  'updaterChannel',
   'portable',
+  'saveConversationContent',
 ] as const;
 
 export type DebugBundleSettingKey = (typeof DEBUG_BUNDLE_SETTINGS_ALLOWLIST)[number];
@@ -90,9 +89,8 @@ export function pickDebugSettings(settings: unknown): DebugBundleSettings {
   return {
     language: stringOrNull(input.language),
     responseLanguage: stringOrNull(input.responseLanguage),
-    adapterBaseUrl: redactAdapterBaseUrl(input.adapterBaseUrl),
-    updaterChannel: stringOrNull(input.updaterChannel),
     portable: typeof input.portable === 'boolean' ? input.portable : null,
+    saveConversationContent: typeof input.saveConversationContent === 'boolean' ? input.saveConversationContent : null,
   };
 }
 
@@ -156,16 +154,3 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-function redactAdapterBaseUrl(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '(custom, non-URL)';
-    return `${url.origin}${url.pathname}`;
-  } catch {
-    return '(custom, non-URL)';
-  }
-}

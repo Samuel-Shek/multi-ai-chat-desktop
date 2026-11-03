@@ -31,9 +31,9 @@ This is a feature-frozen, best-effort open-source project and does not promise a
 - Provider pages are untrusted remote content. Their `ai-<provider>` webviews receive no Tauri capability and no `remote.urls` permission.
 - Only the bundled local `main` control webview receives the app command capability. Rust commands also verify the calling control webview.
 - The bundled control UI uses a production Content Security Policy. Development keeps CSP disabled for the local Vite server.
-- Remote adapter updates are data-only JSON. They may update selectors, approved input/send strategies, and timing, but cannot expand the bundled provider, login, match, or SSO URL scopes.
-- Provider cookies and profiles stay in the local app-data directory. The project has no conversation server, telemetry endpoint, or account backend.
-- Debug bundles and Markdown exports are created only after explicit user action. The adapter diagnostic report excludes page text, input values, cookies, storage, query strings, and fragments.
+- This hardened fork does not fetch adapters or check GitHub for updates. Only the ChatGPT, Grok, and Gemini adapters compiled into the build are used.
+- On macOS 14 or later, each provider uses its own WKWebView data store. The app has no conversation server, telemetry endpoint, or account backend.
+- Debug bundles and Markdown exports are created only after an explicit local action. Adapter diagnostics can be copied to the clipboard. They are not placed in a browser URL.
 
 Provider account security, provider service availability, provider terms, browser-engine vulnerabilities, and a compromised local machine remain outside this application's security boundary.
 
@@ -41,4 +41,4 @@ Provider account security, provider service availability, provider terms, browse
 
 請勿用公開 Issue 回報漏洞，也不要附上 cookie、帳號資料、對話文字、token、provider HTML 或本機 profile。優先使用 GitHub Security 頁面的私人 **Report a vulnerability**；若該功能不可用，請寄信至 [TED@TED-H.com](mailto:TED@TED-H.com)，主旨使用 `[security] multi-ai-chat-desktop`。
 
-遠端 provider webview 沒有 Tauri 權限；只有本機 `main` 控制介面可呼叫 app command。遠端 adapter 只能更新受限 JSON，不能新增或放寬 provider／登入／SSO 網域範圍。
+遠端 provider webview 沒有 Tauri 權限；只有本機 `main` 控制介面可呼叫 app command。這個強化版不會下載 adapter，也不會把診斷送到 GitHub。

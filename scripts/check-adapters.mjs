@@ -30,26 +30,6 @@ const expected = {
     thinkingDetectors: ['[data-testid="stop-button"]', 'button[aria-label="Stop generating"]', 'button[aria-label="Stop streaming"]', 'button[aria-label="Stop"]'],
     stopButtonSelectors: ['[data-testid="stop-button"]', 'button[aria-label="Stop generating"]', 'button[aria-label="Stop streaming"]', 'button[aria-label="Stop"]'],
   },
-  claude: {
-    schemaVersion: 1,
-    adapterVersion: 5,
-    urls: {
-      app: 'https://claude.ai',
-      login: 'https://claude.ai/login',
-      match: ['claude.ai/*'],
-      ssoMatch: ['auth.anthropic.com/*', 'accounts.google.com/*', 'gsi.google.com/*', 'https://www.google.com/accounts', 'accounts.google.com.tw/*'],
-    },
-    inputStrategy: 'prosemirror-paste',
-    doneDelayMs: 5000,
-    chunkDebounceMs: 500,
-    inputSelectors: ['.ProseMirror[contenteditable="true"]', '[contenteditable="true"].ProseMirror', 'div.ProseMirror', 'fieldset div[contenteditable="true"]'],
-    sendButtonSelectors: ['button[aria-label="Send Message"]', 'button[aria-label="Send message"]', 'button[aria-label="Send"]', 'fieldset button[type="button"]:last-of-type'],
-    responseSelectors: ['[data-cds="AssistantMessage"] [data-perf-reply-text]', '.font-claude-response', '[data-is-streaming] .font-claude-response', '.font-claude-message'],
-    loginDetectors: ['.ProseMirror[contenteditable="true"]', '[contenteditable="true"].ProseMirror'],
-    loggedOutDetectors: ['input[type="email"]', 'input[autocomplete="email"]'],
-    thinkingDetectors: ['[data-is-streaming="true"]', 'button[aria-label="Stop Response"]', 'button[aria-label="Stop response"]', 'button[aria-label="Stop"]'],
-    stopButtonSelectors: ['button[aria-label="Stop Response"]', 'button[aria-label="Stop response"]', 'button[aria-label="Stop"]'],
-  },
   gemini: {
     schemaVersion: 1,
     adapterVersion: 2,
@@ -89,51 +69,6 @@ const expected = {
     loggedOutDetectors: [{ selector: 'button', textIncludes: 'Sign in' }, { selector: 'button', textIncludes: 'Sign up' }, { selector: 'button', textIncludes: 'Log in' }, { selector: 'button', textIncludes: '登入' }, { selector: 'button', textIncludes: '註冊' }, { selector: 'button', textIncludes: '登录' }, { selector: 'button', textIncludes: '注册' }, { selector: 'button', textIncludes: 'ログイン' }, { selector: 'button', textIncludes: '登録' }, { selector: 'button', textIncludes: 'Anmelden' }, { selector: 'button', textIncludes: 'Registrieren' }, '[data-testid="anon-paywall-sign-up-card"]', 'a[href^="/sign-in"]', 'a[href^="/sign-up"]'],
     thinkingDetectors: ['button[data-testid="chat-stop"]', 'button[aria-label="Stop"]', 'button[aria-label="Stop generating"]', 'button[aria-label="Stop response"]', '[data-streaming="true"]', { selector: '.thinking-container', textIncludes: 'Thinking', textExcludes: 'Thought for' }],
     stopButtonSelectors: ['button[data-testid="chat-stop"]', 'button[aria-label="Stop"]', 'button[aria-label="Stop generating"]', 'button[aria-label="Stop response"]'],
-  },
-  meta: {
-    schemaVersion: 1,
-    adapterVersion: 3,
-    urls: {
-      app: 'https://www.meta.ai',
-      login: 'https://www.meta.ai',
-      match: ['www.meta.ai/*', 'meta.ai/*'],
-      ssoMatch: [
-        'auth.meta.com/*',
-        'auth.meta.ai/*',
-        'www.facebook.com/*',
-        'm.facebook.com/*',
-        'facebook.com/*',
-        'www.instagram.com/*',
-        'instagram.com/*',
-      ],
-    },
-    inputStrategy: 'default',
-    doneDelayMs: 5000,
-    chunkDebounceMs: 600,
-    inputSelectors: [
-      'input[aria-label="Ask Meta AI"]',
-      'textarea[aria-label="Ask Meta AI"]',
-      'textarea[data-ecto-composer-prehydration-input]',
-      '[contenteditable="true"][aria-label="Ask Meta AI"]',
-      '[contenteditable="true"][role="textbox"]',
-    ],
-    sendButtonSelectors: ['[data-testid="composer-send-button"]', 'button[aria-label="Send"]'],
-    responseSelectors: ['[data-message-item]:not([data-user-message])', '[data-testid="assistant-message"]'],
-    loginDetectors: [
-      'input[aria-label="Ask Meta AI"]',
-      'textarea[aria-label="Ask Meta AI"]',
-      'textarea[data-ecto-composer-prehydration-input]',
-      '[contenteditable="true"][aria-label="Ask Meta AI"]',
-      '[contenteditable="true"][role="textbox"]',
-      'button[aria-label="Send"]',
-    ],
-    loggedOutDetectors: [
-      '[inert] input[aria-label="Ask Meta AI"]',
-      '[inert] textarea[data-ecto-composer-prehydration-input]',
-      '[data-testid="login-button"]',
-    ],
-    thinkingDetectors: ['[data-testid="composer-stop-button"]', 'button[aria-label="Stop"]'],
-    stopButtonSelectors: ['[data-testid="composer-stop-button"]', 'button[aria-label="Stop"]'],
   },
 };
 
@@ -180,43 +115,5 @@ if (validate({ ...grokAdapter, schemaVersion: 1 })) {
 if (validate({ ...grokAdapter, loggedOutDetectors: [{ selector: 'button', textIncludes: '' }] })) {
   throw new Error('schema unexpectedly accepted an empty detector text filter');
 }
-
-// Meta app surface stays on meta.ai. Facebook/Instagram are SSO-only so a live Log in
-// redirect stays in the isolated Meta profile instead of the system browser.
-const metaAdapter = JSON.parse(await readFile(path.join(adapterDir, 'meta.json'), 'utf8'));
-assertEqual(metaAdapter.urls.match, ['www.meta.ai/*', 'meta.ai/*'], 'meta.initialSeed.appScopes');
-assertEqual(
-  metaAdapter.urls.ssoMatch,
-  [
-    'auth.meta.com/*',
-    'auth.meta.ai/*',
-    'www.facebook.com/*',
-    'm.facebook.com/*',
-    'facebook.com/*',
-    'www.instagram.com/*',
-    'instagram.com/*',
-  ],
-  'meta.initialSeed.ssoScopes',
-);
-assertEqual(
-  metaAdapter.responseSelectors,
-  ['[data-message-item]:not([data-user-message])', '[data-testid="assistant-message"]'],
-  'meta.initialSeed.responseSelectors',
-);
-assertEqual(
-  metaAdapter.thinkingDetectors,
-  ['[data-testid="composer-stop-button"]', 'button[aria-label="Stop"]'],
-  'meta.initialSeed.thinkingDetectors',
-);
-assertEqual(
-  metaAdapter.stopButtonSelectors,
-  ['[data-testid="composer-stop-button"]', 'button[aria-label="Stop"]'],
-  'meta.initialSeed.stopButtonSelectors',
-);
-assertEqual(
-  metaAdapter.timing,
-  { doneDelayMs: 5000, chunkDebounceMs: 600, statusIntervalMs: 10000, backupPollMs: 3000 },
-  'meta.initialSeed.timing',
-);
 
 console.log('Adapter schema and bundled seed checks passed.');

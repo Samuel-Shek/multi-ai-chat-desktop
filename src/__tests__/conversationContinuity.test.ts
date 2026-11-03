@@ -12,12 +12,12 @@ import {
 
 describe('conversation continuity', () => {
   it('creates fresh persistent identities independently of workflow turn numbers', () => {
-    const first = createActiveProviderResponse('claude', 'Reviewer');
-    const second = createActiveProviderResponse('claude', 'Reviewer');
+    const first = createActiveProviderResponse('grok', 'Reviewer');
+    const second = createActiveProviderResponse('grok', 'Reviewer');
     const user = createConversationMessageId('user');
 
-    expect(first.id).toMatch(/^ai-claude-/);
-    expect(second.id).toMatch(/^ai-claude-/);
+    expect(first.id).toMatch(/^ai-grok-/);
+    expect(second.id).toMatch(/^ai-grok-/);
     expect(second.id).not.toBe(first.id);
     expect(first.label).toBe('Reviewer');
     expect(user).toMatch(/^user-/);
@@ -27,7 +27,7 @@ describe('conversation continuity', () => {
     const context = buildConversationReplayContext([
       { role: 'user', content: 'Oldest message that should be capped out' },
       ...Array.from({ length: 16 }, (_, index) => ({ role: 'user' as const, content: `Question ${index}` })),
-      { role: 'ai', provider: 'claude', content: 'partial scrape', final: false },
+      { role: 'ai', provider: 'grok', content: 'partial scrape', final: false },
       { role: 'ai', provider: 'grok', content: '[Error: bridge degraded]', final: true },
       { role: 'ai', provider: 'gemini', content: 'Final useful answer', final: true },
     ]);
@@ -54,13 +54,13 @@ describe('conversation continuity', () => {
       newSession: vi.fn().mockResolvedValue(undefined),
     };
 
-    await ensureFreshProviderSessions(['claude', 'gemini'], host);
+    await ensureFreshProviderSessions(['grok', 'gemini'], host);
 
     // A stale remote thread from the previous local session must be discarded, not reused,
     // before the switched-to session's own replay context is ever injected into it.
-    expect(host.resetBootState).toHaveBeenCalledWith('claude');
+    expect(host.resetBootState).toHaveBeenCalledWith('grok');
     expect(host.resetBootState).toHaveBeenCalledWith('gemini');
-    expect(host.newSession).toHaveBeenCalledWith('claude');
+    expect(host.newSession).toHaveBeenCalledWith('grok');
     expect(host.newSession).toHaveBeenCalledWith('gemini');
   });
 
@@ -68,21 +68,21 @@ describe('conversation continuity', () => {
     const host: ProviderSessionResetHost = {
       resetBootState: vi.fn(),
       newSession: vi.fn().mockImplementation(async (provider) => {
-        if (provider === 'claude') throw new Error('fresh boot timed out');
+        if (provider === 'grok') throw new Error('fresh boot timed out');
       }),
     };
 
-    const reset = ensureFreshProviderSessions(['claude', 'gemini'], host);
+    const reset = ensureFreshProviderSessions(['grok', 'gemini'], host);
 
     await expect(reset).rejects.toMatchObject({
       name: 'ProviderSessionResetError',
       completedProviders: ['gemini'],
-      failures: [{ provider: 'claude', reason: expect.any(Error) }],
+      failures: [{ provider: 'grok', reason: expect.any(Error) }],
     } satisfies Partial<ProviderSessionResetError>);
   });
 
   it('resets only loaded providers that participate in the next workflow', () => {
-    const pending = new Set(['chatgpt', 'claude', 'gemini', 'grok'] as const);
+    const pending = new Set(['chatgpt', 'grok', 'gemini', 'grok'] as const);
 
     expect(
       pendingProviderSessionResets(

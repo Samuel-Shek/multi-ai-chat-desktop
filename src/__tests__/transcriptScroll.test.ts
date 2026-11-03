@@ -85,16 +85,16 @@ describe('transcript scrolling', () => {
   it('picks the message that has scrolled past the reading line so the chip matches what the user is reading', () => {
     const container = {
       getBoundingClientRect: () => ({ top: 0 }),
-      querySelectorAll: () => [fakeArticle('chatgpt', -200), fakeArticle('claude', -10), fakeArticle('gemini', 300)],
+      querySelectorAll: () => [fakeArticle('chatgpt', -200), fakeArticle('grok', -10), fakeArticle('gemini', 300)],
     };
 
-    expect(findScrollActiveProvider(container)).toBe('claude');
+    expect(findScrollActiveProvider(container)).toBe('grok');
   });
 
   it('does not mark a provider before its first message reaches the reading line', () => {
     const container = {
       getBoundingClientRect: () => ({ top: 0 }),
-      querySelectorAll: () => [fakeArticle('chatgpt', 50), fakeArticle('claude', 300)],
+      querySelectorAll: () => [fakeArticle('chatgpt', 50), fakeArticle('grok', 300)],
     };
 
     expect(findScrollActiveProvider(container)).toBeUndefined();

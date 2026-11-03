@@ -52,7 +52,7 @@ function findButtonByAria(
 function harness(
   onOpenLogin = vi.fn<(provider: AIProvider) => Promise<void>>(),
   {
-    provider = 'meta',
+    provider = 'gemini',
     login = 'logged_out',
     stuckGrok = false,
   }: { provider?: AIProvider; login?: ProviderState['login']; stuckGrok?: boolean } = {},
@@ -88,8 +88,8 @@ function harness(
     };
   }
   const providers = stuckGrok
-    ? (['chatgpt', 'claude', 'gemini', 'grok', provider === 'meta' ? 'meta' : 'chatgpt'] as AIProvider[])
-    : (['chatgpt', 'claude', 'gemini', provider === 'meta' ? 'meta' : 'grok'] as AIProvider[]);
+    ? (['chatgpt', 'grok', 'gemini', 'grok', provider === 'gemini' ? 'gemini' : 'chatgpt'] as AIProvider[])
+    : (['chatgpt', 'grok', 'gemini', provider === 'gemini' ? 'gemini' : 'grok'] as AIProvider[]);
   const render = () => {
     vi.mocked(useState).mockImplementationOnce(() => [actionState, (next) => {
       if (!mounted) updatesAfterUnmount();
@@ -103,7 +103,7 @@ function harness(
     });
     const tree = FocusPane({
       centeredProvider: provider, states,
-      presentation: { ...defaultPresentation(), grok: provider === 'meta' ? 'chip' : 'side', [provider]: 'center' },
+      presentation: { ...defaultPresentation(), grok: provider === 'gemini' ? 'chip' : 'side', [provider]: 'center' },
       providers: [...new Set(providers)],
       centerSurface: 'native', centerTextFinal: false,
       userHidden: new Set(), presentationHidden: new Set(),
@@ -177,9 +177,9 @@ describe('FocusPane provider action failure recovery', () => {
     });
     expect(() => ui.report()).not.toThrow();
     await vi.waitFor(() => expect(renderToStaticMarkup(ui.render())).toContain('role="alert"'));
-    expect(renderToStaticMarkup(ui.render())).toContain('Couldn&#x27;t prepare the report for Meta AI. Please try again.');
+    expect(renderToStaticMarkup(ui.render())).toContain('Couldn&#x27;t prepare the report for Gemini. Please try again.');
     ui.retry();
-    await vi.waitFor(() => expect(ui.reportProvider.mock.calls).toEqual([['meta'], ['meta']]));
+    await vi.waitFor(() => expect(ui.reportProvider.mock.calls).toEqual([['gemini'], ['gemini']]));
     expect(ui.onOpenLogin).not.toHaveBeenCalled();
     expect(ui.changeProviderPresentation).not.toHaveBeenCalled();
     expect(ui.syncBounds).not.toHaveBeenCalled();
@@ -280,7 +280,7 @@ describe('FocusPane provider action failure recovery', () => {
       ui.reload();
     }
     ui.reload();
-    expect(reload.mock.calls).toEqual([['meta'], ['meta']]);
+    expect(reload.mock.calls).toEqual([['gemini'], ['gemini']]);
     resolveRetry(); await retryPending; await Promise.resolve();
     expect(ui.syncBounds).toHaveBeenCalledTimes(outcome === 'success' ? 2 : 1);
     expect(renderToStaticMarkup(ui.render())).not.toContain('role="alert"');
@@ -313,13 +313,13 @@ describe('FocusPane provider action failure recovery', () => {
       ui.login();
     }
     ui.login();
-    expect(onOpenLogin.mock.calls).toEqual([['meta'], ['meta']]);
+    expect(onOpenLogin.mock.calls).toEqual([['gemini'], ['gemini']]);
     resolveRetry(); await retryPending; await Promise.resolve();
     expect(ui.changeProviderPresentation).not.toHaveBeenCalled();
     expect(ui.syncBounds).not.toHaveBeenCalled();
     expect(renderToStaticMarkup(ui.render())).not.toContain('role="alert"');
     ui.login();
-    expect(onOpenLogin.mock.calls).toEqual([['meta'], ['meta'], ['meta']]);
+    expect(onOpenLogin.mock.calls).toEqual([['gemini'], ['gemini'], ['gemini']]);
   });
 
   it.each(['success', 'failure'] as const)('keeps Reload guarded until bounds sync %s and releases it afterwards', async (outcome) => {
@@ -339,7 +339,7 @@ describe('FocusPane provider action failure recovery', () => {
     await Promise.resolve();
     ui.reload();
     await vi.waitFor(() => expect(ui.syncBounds).toHaveBeenCalledTimes(2));
-    expect(reload.mock.calls).toEqual([['meta'], ['meta']]);
+    expect(reload.mock.calls).toEqual([['gemini'], ['gemini']]);
   });
 
   it.each(['unmount', 'newer-action'] as const)('does not sync bounds after a pending Reload is invalidated by %s', async (action) => {
@@ -363,9 +363,9 @@ describe('FocusPane provider action failure recovery', () => {
     expect(ui.updatesAfterUnmount).not.toHaveBeenCalled();
     const newPane = harness();
     newPane.reload();
-    await vi.waitFor(() => expect(newPane.syncBounds).toHaveBeenCalledWith('meta'));
+    await vi.waitFor(() => expect(newPane.syncBounds).toHaveBeenCalledWith('gemini'));
     expect(newPane.syncBounds).toHaveBeenCalledTimes(1);
-    expect(reload.mock.calls).toEqual([['meta'], ['meta']]);
+    expect(reload.mock.calls).toEqual([['gemini'], ['gemini']]);
   });
 
   it.each(['reconnect', 'activate'])('retries status-strip reconnect after %s rejects without Login/Reload/browser', async (failure) => {
@@ -404,8 +404,8 @@ describe('FocusPane provider action failure recovery', () => {
 
     ui.retry();
     await vi.waitFor(() => expect(ui.syncBounds).toHaveBeenCalledTimes(failure === 'reload' ? 1 : 2));
-    expect(reload.mock.calls).toEqual([['meta'], ['meta']]);
-    expect(ui.syncBounds).toHaveBeenLastCalledWith('meta');
+    expect(reload.mock.calls).toEqual([['gemini'], ['gemini']]);
+    expect(ui.syncBounds).toHaveBeenLastCalledWith('gemini');
     expect(ui.onOpenLogin).not.toHaveBeenCalled();
     expect(ui.changeProviderPresentation).not.toHaveBeenCalled();
     expect(renderToStaticMarkup(ui.render())).not.toContain('role="alert"');
@@ -418,14 +418,14 @@ describe('FocusPane provider action failure recovery', () => {
         .mockResolvedValueOnce(undefined);
       const ui = harness(onOpenLogin);
 
-      await expect(ui.stage().props.onOpenLogin('meta')).resolves.toBeUndefined();
+      await expect(ui.stage().props.onOpenLogin('gemini')).resolves.toBeUndefined();
       const failedHtml = renderToStaticMarkup(ui.render());
       expect(failedHtml).toContain('role="alert"');
-      expect(failedHtml).toContain('Couldn&#x27;t open Meta AI. Please try again.');
+      expect(failedHtml).toContain('Couldn&#x27;t open Gemini. Please try again.');
       expect(failedHtml).toContain('Try again');
 
       ui.retry();
-      await vi.waitFor(() => expect(onOpenLogin.mock.calls).toEqual([['meta'], ['meta']]));
+      await vi.waitFor(() => expect(onOpenLogin.mock.calls).toEqual([['gemini'], ['gemini']]));
       expect(ui.changeProviderPresentation).not.toHaveBeenCalled();
       expect(renderToStaticMarkup(ui.render())).not.toContain('role="alert"');
     },
@@ -434,11 +434,11 @@ describe('FocusPane provider action failure recovery', () => {
   it('keeps pane-open retry separate from Login retry', async () => {
     const ui = harness();
     ui.changeProviderPresentation.mockRejectedValueOnce(new Error('open failed'));
-    await ui.stage().props.activateProvider('meta');
+    await ui.stage().props.activateProvider('gemini');
     expect(renderToStaticMarkup(ui.render())).toContain('role="alert"');
     ui.retry();
     await vi.waitFor(() => expect(ui.changeProviderPresentation.mock.calls).toEqual([
-      ['meta', 'center'], ['meta', 'center'],
+      ['gemini', 'center'], ['gemini', 'center'],
     ]));
     expect(ui.onOpenLogin).not.toHaveBeenCalled();
     expect(renderToStaticMarkup(ui.render())).not.toContain('role="alert"');
@@ -449,7 +449,7 @@ describe('FocusPane provider action failure recovery', () => {
     const pending = new Promise<void>((_, rejectPromise) => { reject = rejectPromise; });
     const ui = harness(vi.fn<(provider: AIProvider) => Promise<void>>()
       .mockReturnValueOnce(pending).mockResolvedValueOnce(undefined));
-    const first = ui.stage().props.onOpenLogin('meta');
+    const first = ui.stage().props.onOpenLogin('gemini');
     await ui.stage().props.onOpenLogin('chatgpt');
     reject(new Error('late navigation rejection'));
     await expect(first).resolves.toBeUndefined();

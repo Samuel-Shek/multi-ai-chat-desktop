@@ -42,9 +42,8 @@ describe('multi-webview e2e', () => {
     // Render the focus pane with multiple providers
     const states = {
       chatgpt: { provider: 'chatgpt', webview: 'loaded', dom: 'ready', login: 'logged_in', thinking: false, lastStatusAt: 1, bridge: 'ok' },
-      claude: { provider: 'claude', webview: 'loaded', dom: 'ready', login: 'logged_in', thinking: false, lastStatusAt: 1, bridge: 'ok' },
-      gemini: { provider: 'gemini', webview: 'loaded', dom: 'ready', login: 'logged_in', thinking: false, lastStatusAt: 1, bridge: 'ok' },
       grok: { provider: 'grok', webview: 'loaded', dom: 'ready', login: 'logged_in', thinking: false, lastStatusAt: 1, bridge: 'ok' },
+      gemini: { provider: 'gemini', webview: 'loaded', dom: 'ready', login: 'logged_in', thinking: false, lastStatusAt: 1, bridge: 'ok' },
     } as unknown as Record<string, ProviderState>;
 
     const html = renderToStaticMarkup(
@@ -64,13 +63,13 @@ describe('multi-webview e2e', () => {
           onOpenLogin: vi.fn() as unknown as () => Promise<void>,
           syncBounds: vi.fn() as unknown as () => Promise<void>,
           reportProvider: vi.fn() as unknown as () => Promise<void>,
-          activeProviders: ['chatgpt', 'claude', 'gemini', 'grok'],
+          activeProviders: ['chatgpt', 'grok', 'gemini', 'grok'],
         } as unknown as React.Attributes)
       })
     );
 
     expect(html).toContain('ChatGPT');
-    expect(html).toContain('Claude');
+    expect(html).toContain('Grok');
   });
 
   it('verifies error recovery', () => {

@@ -376,7 +376,6 @@ interface MacBridge {
       return window.__MAC_PROVIDER__;
     }
     const host = location.hostname;
-    if (host.includes('claude')) return 'claude';
     if (host.includes('gemini')) return 'gemini';
     if (host.includes('grok')) return 'grok';
     return 'chatgpt';

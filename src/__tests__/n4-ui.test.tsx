@@ -61,7 +61,7 @@ function response(provider: AIProvider, action: 'RESPONSE_CHUNK' | 'RESPONSE_DON
 }
 
 describe('N4 preset catalog', () => {
-  it.each(['en', 'zh-TW', 'ja', 'de'] as const)('renders the six built-in cards with %s time meta only', (locale) => {
+  it.each(['en', 'zh-TW', 'ja', 'de'] as const)('renders the six built-in cards with %s time gemini only', (locale) => {
     const tree = PresetCatalog({
       mode: 'free',
       onSelectPreset: vi.fn(),
@@ -77,7 +77,7 @@ describe('N4 preset catalog', () => {
     for (const preset of PRESET_CATALOG) {
       const card = cardButtons.find((button) => textOf(button).includes(t(preset.displayNameKey, locale)));
       expect(card).toBeTruthy();
-      if (!preset.metaKey) throw new Error(`Missing meta key for ${preset.id}`);
+      if (!preset.metaKey) throw new Error(`Missing gemini key for ${preset.id}`);
       expect(textOf(card)).toContain(t(preset.metaKey, locale));
       expect(textOf(card)).not.toContain(t(preset.descriptionKey, locale));
       expect(textOf(card)).not.toContain(t(preset.costLabelKey, locale));
@@ -153,7 +153,7 @@ describe('N4 preset catalog', () => {
   });
 
   it('shows live readiness before the user selects a workflow', () => {
-    const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+    const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
     const states = Object.fromEntries(
       providers.map((provider, index) => [
         provider,
@@ -173,8 +173,8 @@ describe('N4 preset catalog', () => {
     );
 
     expect(html).toContain('2 connected');
-    expect(new Set(Object.values(DEFAULT_DEBATE_ROLES)).size).toBe(4);
-    expect(html).toContain('2/4 ready');
+    expect(new Set(Object.values(DEFAULT_DEBATE_ROLES)).size).toBe(3);
+    expect(html).toContain('2/3 ready');
   });
 });
 
@@ -185,12 +185,12 @@ describe('N4 process trace', () => {
     trace = reduceProcessTraceEvent(trace, role('chatgpt', 'pro', 'Pro', 1), locale);
     trace = reduceProcessTraceEvent(trace, response('chatgpt', 'RESPONSE_DONE'), locale);
     trace = reduceProcessTraceEvent(trace, status('Debate: con'), locale);
-    trace = reduceProcessTraceEvent(trace, role('claude', 'con', 'Con', 2), locale);
+    trace = reduceProcessTraceEvent(trace, role('grok', 'con', 'Con', 2), locale);
 
     expect(trace.currentStatus).toBe('Debate: con');
     expect(trace.steps.map((step) => [step.label, step.status])).toEqual([
       ['Pro · ChatGPT', 'done'],
-      ['Con · Claude', 'active'],
+      ['Con · Grok', 'active'],
     ]);
 
     const html = renderToStaticMarkup(<ProcessTrace trace={trace} locale={locale} />);
@@ -230,7 +230,7 @@ describe('N4 process trace', () => {
     let trace = createProcessTrace('free', [...DEFAULT_FREE_TARGET_PROVIDERS], 'en', 'brainstorm');
 
     expect(trace.steps).toEqual([]);
-    trace = reduceProcessTraceEvent(trace, role('claude', 'B1', 'Brainstorm round 1', 1), 'en');
-    expect(trace.steps.map((step) => [step.label, step.status])).toEqual([['Brainstorm round 1 · Claude', 'active']]);
+    trace = reduceProcessTraceEvent(trace, role('grok', 'B1', 'Brainstorm round 1', 1), 'en');
+    expect(trace.steps.map((step) => [step.label, step.status])).toEqual([['Brainstorm round 1 · Grok', 'active']]);
   });
 });

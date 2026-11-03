@@ -5,7 +5,7 @@ import type { AIProvider, ChatMode, DebateRoles, ConsultRoles, CodingRoles, Roun
 
 // === AI Provider Info ===
 
-export const ALL_AI_PROVIDERS = ['chatgpt', 'claude', 'gemini', 'grok', 'meta'] as const satisfies readonly AIProvider[];
+export const ALL_AI_PROVIDERS = ['chatgpt', 'grok', 'gemini'] as const satisfies readonly AIProvider[];
 
 export const AI_PROVIDERS: Record<AIProvider, {
   name: string;
@@ -19,12 +19,6 @@ export const AI_PROVIDERS: Record<AIProvider, {
     loginUrl: 'https://chatgpt.com/auth/login',
     color: '#10a37f',
   },
-  claude: {
-    name: 'Claude',
-    url: 'https://claude.ai',
-    loginUrl: 'https://claude.ai/login',
-    color: '#d97706',
-  },
   gemini: {
     name: 'Gemini',
     url: 'https://gemini.google.com',
@@ -37,17 +31,10 @@ export const AI_PROVIDERS: Record<AIProvider, {
     loginUrl: 'https://grok.com',
     color: '#e11d48',
   },
-  meta: {
-    name: 'Meta AI',
-    url: 'https://www.meta.ai',
-    loginUrl: 'https://www.meta.ai',
-    color: '#0668e1',
-  },
 };
 
-export const DOCK_SLOT_PROVIDERS = ['chatgpt', 'claude', 'gemini', 'grok'] as const satisfies readonly AIProvider[];
-export const DEFAULT_FREE_TARGET_PROVIDERS = ['chatgpt', 'claude', 'gemini', 'grok'] as const satisfies readonly AIProvider[];
-export const DEFAULT_STANDBY_PROVIDER: AIProvider = 'meta';
+export const DOCK_SLOT_PROVIDERS = ['chatgpt', 'grok', 'gemini'] as const satisfies readonly AIProvider[];
+export const DEFAULT_FREE_TARGET_PROVIDERS = ['chatgpt', 'grok', 'gemini'] as const satisfies readonly AIProvider[];
 
 // === Mode Definitions ===
 
@@ -91,33 +78,34 @@ export const CHAT_MODES: Record<ChatMode, {
 
 // === Default Role Assignments ===
 
-// Every built-in four-role setup starts with one seat per provider. Users can
-// still customize assignments in Settings when a provider is unavailable.
+// Debate uses three providers for four serial steps: Gemini both judges and summarises.
+// Other serial setups may reuse a provider. Consult's two opening answers run in parallel
+// and stay on different providers. Settings can change every assignment.
 export const DEFAULT_DEBATE_ROLES: DebateRoles = {
   pro: 'chatgpt',
-  con: 'claude',
-  judge: 'grok',
+  con: 'grok',
+  judge: 'gemini',
   summary: 'gemini',
 };
 
 export const DEFAULT_CONSULT_ROLES: ConsultRoles = {
   first: 'chatgpt',
   second: 'grok',
-  reviewer: 'claude',
+  reviewer: 'gemini',
   summary: 'gemini',
 };
 
 export const DEFAULT_CODING_ROLES: CodingRoles = {
   planner: 'gemini',
   reviewer: 'chatgpt',
-  coder: 'claude',
-  tester: 'grok',
+  coder: 'grok',
+  tester: 'chatgpt',
 };
 
 export const DEFAULT_ROUNDTABLE_ROLES: RoundtableRoles = {
-  first: 'claude',
-  second: 'gemini',
-  third: 'grok',
+  first: 'chatgpt',
+  second: 'grok',
+  third: 'gemini',
   fourth: 'chatgpt',
 };
 
@@ -338,7 +326,6 @@ export const SSO_ALLOWLIST_HOSTS = [
   'appleid.apple.com',
   'login.microsoftonline.com',
   'login.live.com',
-  'github.com',
 ] as const;
 
 export const PULL_MAX_DECODED_BYTES = 1_048_576;

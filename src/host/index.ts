@@ -94,8 +94,6 @@ export const host = {
   adapter: {
     push: (provider: AIProvider, _cfg: unknown): Promise<void> => invoke('adapter_push', { provider }),
     reportBroken: (provider: AIProvider): Promise<string> => invoke('report_broken', { provider }),
-    openIssue: (provider: AIProvider, body: string): Promise<void> =>
-      invoke('open_adapter_issue', { provider, body }),
     onNotice: async (handler: (notice: AdapterNotice) => void): Promise<() => void> => {
       const unlisten = await listen<AdapterNotice>('adapter://notice', (event) => handler(event.payload));
       return unlisten;

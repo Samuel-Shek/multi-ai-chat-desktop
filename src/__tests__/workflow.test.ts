@@ -45,7 +45,7 @@ import {
 } from '../workflow/waitForResponse';
 import { resetWorkflowRuntimeForTests, runWorkflow } from '../workflow';
 import { createResponseLanguagePolicy } from '../workflow/responseLanguage';
-import { activeProvidersForStandby, normalizeSettings } from '../ui/settingsModel';
+import { activeProviders, normalizeSettings } from '../ui/settingsModel';
 
 vi.mock('../host', () => ({
   host: {
@@ -70,7 +70,7 @@ vi.mock('../host', () => ({
   },
 }));
 
-const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const providers: AIProvider[] = ['chatgpt', 'grok', 'gemini'];
 
 function providerName(provider: AIProvider): string {
   return AI_PROVIDERS[provider].name;
@@ -158,9 +158,9 @@ describe('workflow engine', () => {
 
   it('registers the waiter before sending so a synchronous DONE from send resolves', async () => {
     vi.mocked(host.provider.send).mockImplementationOnce(async () => {
-      publishBridgeMessage(done('claude', 'fast'));
+      publishBridgeMessage(done('grok', 'fast'));
     });
-    await expect(sendAndWait('claude', 'fast prompt')).resolves.toEqual({ response: 'fast', turn: 1 });
+    await expect(sendAndWait('grok', 'fast prompt')).resolves.toEqual({ response: 'fast', turn: 1 });
   });
 
   it('keeps the workflow inactivity timeout at the exact 600-second contract boundary', () => {
@@ -186,14 +186,14 @@ describe('workflow engine', () => {
   });
 
   it('keeps a long task alive while thinking status reports continue', async () => {
-    const promise = sendAndWait('claude', 'long review task');
+    const promise = sendAndWait('grok', 'long review task');
     await Promise.resolve();
 
     await vi.advanceTimersByTimeAsync(AWAITING_MAX_MS - 1_000);
     handleTitleMessage({
       v: 1,
       action: 'STATUS_REPORT',
-      provider: 'claude',
+      provider: 'grok',
       bootId: 'long-task',
       seq: 1,
       payload: { dom: 'ready', thinking: true },
@@ -202,7 +202,7 @@ describe('workflow engine', () => {
     await vi.advanceTimersByTimeAsync(AWAITING_MAX_MS - 1_000);
 
     await expect(Promise.race([promise.then(() => 'settled'), Promise.resolve('pending')])).resolves.toBe('pending');
-    publishBridgeMessage(done('claude', 'reviewed'));
+    publishBridgeMessage(done('grok', 'reviewed'));
     await expect(promise).resolves.toEqual({ response: 'reviewed', turn: 1 });
   });
 
@@ -254,13 +254,13 @@ describe('workflow engine', () => {
   });
 
   it('blocks serial preflight for unavailable providers and same-provider consult aliasing', async () => {
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude', false), state('gemini'), state('grok')]);
-    await expect(preflightSerialMode('debate', { pro: 'chatgpt', con: 'claude', judge: 'grok', summary: 'gemini' })).resolves.toMatchObject({
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok', false), state('gemini')]);
+    await expect(preflightSerialMode('debate', { pro: 'chatgpt', con: 'grok', judge: 'grok', summary: 'gemini' })).resolves.toMatchObject({
       ok: false,
-      unavailable: ['claude'],
+      unavailable: ['grok'],
     });
     await expect(
-      preflightSerialMode('consult', { first: 'chatgpt', second: 'chatgpt', reviewer: 'claude', summary: 'gemini' }),
+      preflightSerialMode('consult', { first: 'chatgpt', second: 'chatgpt', reviewer: 'grok', summary: 'gemini' }),
     ).resolves.toMatchObject({ ok: false, aliased: ['chatgpt'] });
   });
 
@@ -271,7 +271,7 @@ describe('workflow engine', () => {
     { mode: 'roundtable' },
     { mode: 'free', presetId: 'brainstorm' },
   ] as const)('blocks standby roles before any send despite stale Ready state: %j', async (workflow) => {
-    vi.mocked(host.connections.get).mockResolvedValue([...providers, 'meta' as const].map((provider) => state(provider)));
+    vi.mocked(host.connections.get).mockResolvedValue(providers.map((provider) => state(provider, provider !== 'grok')));
     vi.mocked(host.provider.send).mockImplementation(async (provider) => {
       publishBridgeMessage(done(provider, `${provider}-answer`));
     });
@@ -279,7 +279,7 @@ describe('workflow engine', () => {
     await expect(runWorkflow({
       ...workflow,
       text: 'stale standby must not run',
-      activeProviders: activeProvidersForStandby('grok'),
+      activeProviders: activeProviders(),
     })).resolves.toEqual({
       ok: false,
       preflight: { ok: false, unavailable: ['grok'], aliased: [] },
@@ -289,8 +289,8 @@ describe('workflow engine', () => {
 
   it.each(providers)('preserves all four debate steps when Meta replaces %s', async (standbyProvider) => {
     const settings = normalizeSettings({ standbyProvider });
-    const activeProviders = activeProvidersForStandby(standbyProvider);
-    vi.mocked(host.connections.get).mockResolvedValue(activeProviders.map((provider) => state(provider)));
+    const activeProviderList = activeProviders();
+    vi.mocked(host.connections.get).mockResolvedValue(activeProviderList.map((provider) => state(provider)));
     vi.mocked(host.provider.send).mockImplementation(async (provider) => {
       publishBridgeMessage(done(provider, `${provider}-answer`));
     });
@@ -299,21 +299,21 @@ describe('workflow engine', () => {
       text: 'four-seat debate',
       mode: 'debate',
       roles: settings.modeRoles.debate,
-      activeProviders,
+      activeProviders: activeProviderList,
     })).resolves.toEqual({ ok: true });
 
-    const expected = Object.values(DEFAULT_DEBATE_ROLES).map((provider) => provider === standbyProvider ? 'meta' : provider);
+    const expected = Object.values(DEFAULT_DEBATE_ROLES);
     expect(vi.mocked(host.provider.send).mock.calls.map(([provider]) => provider)).toEqual(expected);
-    expect(new Set(expected)).toEqual(new Set(activeProviders));
+    expect(new Set(expected)).toEqual(new Set(activeProviderList));
   });
 
   it.each(providers.flatMap((standbyProvider) =>
     (['consult', 'coding', 'roundtable', 'brainstorm'] as const).map((workflow) => ({ standbyProvider, workflow })),
   ))('preserves $workflow sequence and recorded roles when Meta replaces $standbyProvider', async ({ standbyProvider, workflow }) => {
     const settings = normalizeSettings({ standbyProvider });
-    const activeProviders = activeProvidersForStandby(standbyProvider);
+    const activeProviderList = activeProviders();
     // Include a stale Ready standby to prove the saved lineup controls every send.
-    vi.mocked(host.connections.get).mockResolvedValue([...providers, 'meta' as const].map((provider) => state(provider)));
+    vi.mocked(host.connections.get).mockResolvedValue([...providers, 'gemini' as const].map((provider) => state(provider)));
     vi.mocked(host.provider.send).mockImplementation(async (provider) => {
       publishBridgeMessage(done(provider, `${provider}-answer`));
     });
@@ -324,7 +324,7 @@ describe('workflow engine', () => {
       mode: workflow === 'brainstorm' ? 'free' : workflow,
       ...(workflow === 'brainstorm' ? { presetId: 'brainstorm' as const } : {}),
       roles,
-      activeProviders,
+      activeProviders: activeProviderList,
     })).resolves.toEqual({ ok: true });
 
     const roundtableSeats = Object.values(DEFAULT_ROUNDTABLE_ROLES);
@@ -338,9 +338,9 @@ describe('workflow engine', () => {
           : Array.from({ length: BRAINSTORM_ROUND_COUNT }, (_, round) =>
             roundtableSeats.map((_, seat) => roundtableSeats[(round + seat) % 4]),
           ).flat();
-    const expected = baseline.map((provider) => provider === standbyProvider ? 'meta' : provider);
+    const expected = baseline;
     expect(vi.mocked(host.provider.send).mock.calls.map(([provider]) => provider)).toEqual(expected);
-    expect(new Set(expected)).toEqual(new Set(activeProviders));
+    expect(new Set(expected)).toEqual(new Set(activeProviderList));
     expect(getLastSnapshot()?.roleMap).toEqual(roles);
     expect(getLastSnapshot()?.steps.map((step) => step.provider)).toEqual(expected);
     expect(getLastSnapshot()?.steps.every((step) => step.status === 'done')).toBe(true);
@@ -351,8 +351,8 @@ describe('workflow engine', () => {
     const unsubscribe = onBridgeMessage((message) => {
       if (message.action === 'WORKFLOW_STATUS' && typeof message.payload === 'string') statuses.push(message.payload);
     });
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude', false), state('gemini'), state('grok')]);
-    const run = runWorkflow({ text: 'q', mode: 'free', targets: ['chatgpt', 'claude'] });
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok', false), state('gemini')]);
+    const run = runWorkflow({ text: 'q', mode: 'free', targets: ['chatgpt', 'grok'] });
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(1));
     publishBridgeMessage(done('chatgpt', 'ok'));
     await expect(run).resolves.toEqual({ ok: true });
@@ -369,7 +369,7 @@ describe('workflow engine', () => {
   });
 
   it('drops an explicitly selected standby provider even when stale state says it is sendable', async () => {
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'grok', 'gemini', 'gemini'];
     vi.mocked(host.connections.get).mockResolvedValue([
       ...activeProviders.map((provider) => state(provider)),
       state('grok'),
@@ -381,15 +381,15 @@ describe('workflow engine', () => {
     await expect(runWorkflow({
       text: 'standby filter',
       mode: 'free',
-      targets: ['grok', 'meta'],
+      targets: ['grok', 'gemini'],
       activeProviders,
     })).resolves.toEqual({ ok: true });
 
-    expect(vi.mocked(host.provider.send).mock.calls.map(([provider]) => provider)).toEqual(['meta']);
+    expect(vi.mocked(host.provider.send).mock.calls.map(([provider]) => provider)).toEqual(['grok', 'gemini']);
   });
 
   it('uses the caller active lineup when Meta AI replaces a default free target', async () => {
-    const activeProviders: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'meta'];
+    const activeProviders: AIProvider[] = ['chatgpt', 'grok', 'gemini', 'gemini'];
     vi.mocked(host.connections.get).mockResolvedValue([
       ...activeProviders.map((provider) => state(provider)),
       state('grok', false),
@@ -398,7 +398,7 @@ describe('workflow engine', () => {
       publishBridgeMessage(done(provider, `${provider}-answer`));
     });
 
-    await expect(runWorkflow({ text: 'meta fallback', mode: 'free', activeProviders })).resolves.toEqual({ ok: true });
+    await expect(runWorkflow({ text: 'gemini fallback', mode: 'free', activeProviders })).resolves.toEqual({ ok: true });
 
     expect(vi.mocked(host.provider.send).mock.calls.map(([provider]) => provider)).toEqual(activeProviders);
   });
@@ -502,7 +502,7 @@ describe('workflow engine', () => {
   });
 
   it('blocks Brainstorm before turn one when a required provider is unavailable', async () => {
-    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('claude', false), state('gemini'), state('grok')]);
+    vi.mocked(host.connections.get).mockResolvedValue([state('chatgpt'), state('grok', false), state('gemini')]);
 
     await expect(
       runWorkflow({
@@ -512,7 +512,7 @@ describe('workflow engine', () => {
       }),
     ).resolves.toEqual({
       ok: false,
-      preflight: { ok: false, unavailable: ['claude'], aliased: [] },
+      preflight: { ok: false, unavailable: ['grok'], aliased: [] },
     });
     expect(host.provider.send).not.toHaveBeenCalled();
   });
@@ -582,7 +582,7 @@ describe('workflow engine', () => {
         text: 'What should we improve next?',
         context: 'User:\nReview this repository.\n\nClaude:\nStart with session continuity.',
         mode: 'free',
-        targets: ['claude'],
+        targets: ['grok'],
       }),
     ).resolves.toEqual({ ok: true });
 
@@ -721,10 +721,10 @@ describe('workflow engine', () => {
   });
 
   it('retry after degraded clears degraded state, re-arms polling, and resolves via real pull', async () => {
-    const step = runStep('claude', 'degraded retry');
+    const step = runStep('grok', 'degraded retry');
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(1));
     vi.mocked(host.provider.evalWithCallback).mockRejectedValue(new Error('callback failed'));
-    const degrade = pullProvider('claude');
+    const degrade = pullProvider('grok');
     await vi.advanceTimersByTimeAsync(1000);
     await degrade;
 
@@ -733,7 +733,7 @@ describe('workflow engine', () => {
     await vi.waitFor(() => expect(host.provider.send).toHaveBeenCalledTimes(2));
     const callsAfterRetry = vi.mocked(host.provider.evalWithCallback).mock.calls.length;
     vi.mocked(host.provider.evalWithCallback).mockResolvedValue(
-      JSON.stringify([{ v: 1, action: 'RESPONSE_DONE', provider: 'claude', bootId: 'retry', mid: 1, payload: 'recovered' }]),
+      JSON.stringify([{ v: 1, action: 'RESPONSE_DONE', provider: 'grok', bootId: 'retry', mid: 1, payload: 'recovered' }]),
     );
     await vi.advanceTimersByTimeAsync(POLL_PULL_MS);
     expect(vi.mocked(host.provider.evalWithCallback).mock.calls.length).toBeGreaterThan(callsAfterRetry);
@@ -926,7 +926,7 @@ describe('workflow engine', () => {
     });
 
     await expect(
-      runWorkflow({ text: 'independent fan-out', mode: 'free', targets: ['chatgpt', 'claude'] }),
+      runWorkflow({ text: 'independent fan-out', mode: 'free', targets: ['chatgpt', 'grok'] }),
     ).resolves.toEqual({ ok: true });
     unsubscribe();
 

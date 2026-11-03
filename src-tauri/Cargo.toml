@@ -1,12 +1,12 @@
 [package]
 name = "multi-ai-chat-desktop"
-version = "0.0.0"
-description = "Multi-AI Chat Desktop"
+version = "1.9.6-hardened.1"
+description = "Multi-AI Chat Hardened"
 authors = ["Ted Huang"]
 license = "MIT"
 repository = ""
 edition = "2021"
-rust-version = "1.78"
+rust-version = "1.85"
 
 [lib]
 name = "multi_ai_chat_desktop_lib"
@@ -17,12 +17,8 @@ tauri-build = { version = "=2.6.3", features = [] }
 
 [dependencies]
 tauri = { version = "=2.11.5", features = ["unstable"] }
-# Inactive compatibility dependency (SPEC §2): no updater is registered.
-# Keep archive extraction disabled; the frozen app only opens GitHub Releases.
-tauri-plugin-updater = { version = "=2.10.1", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-dialog = "=2.7.1"
 tauri-plugin-opener = "=2.5.4"
-reqwest = { version = "0.12.12", features = ["json", "rustls-tls"], default-features = false }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.134"
 tokio = { version = "1.42.0", features = ["rt-multi-thread", "macros", "sync", "time"] }

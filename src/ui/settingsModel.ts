@@ -1,5 +1,5 @@
 import type { AIProvider } from '../../shared/types';
-import { AI_PROVIDERS, ALL_AI_PROVIDERS, DEFAULT_STANDBY_PROVIDER } from '../../shared/constants';
+import { AI_PROVIDERS, ALL_AI_PROVIDERS } from '../../shared/constants';
 import { DEFAULT_COLUMN_WIDTHS, type ColumnWidths, clampColumnWidths } from './dockLayout';
 import { DEFAULT_FOCUS_PANE_WIDTH, clampFocusPaneWidth } from './focusLayout';
 import {
@@ -34,12 +34,11 @@ export interface AppSettings {
   columnWidths: ColumnWidths;
   slotAssignment: SlotAssignment;
   modeRoles: ModeRoleAssignments;
-  standbyProvider: AIProvider;
   openProviders: AIProvider[];
-  adapterBaseUrl: string;
-  updaterChannel: string;
   portable: boolean;
   telemetry: 'none';
+  /** Off by default. When false, conversation text is not written to local storage. */
+  saveConversationContent: boolean;
   snapshotPersistence: boolean;
   snapshotRedactionTier: SnapshotRedactionTier;
   presentation: PresentationByProvider;
@@ -49,14 +48,8 @@ const PROVIDERS = Object.keys(AI_PROVIDERS) as AIProvider[];
 export const SETTINGS_SCHEMA_VERSION = 2;
 const LEGACY_MODE_ROLE_MIGRATION_VERSION = 1;
 
-export function activeProvidersForStandby(standbyProvider: AIProvider): AIProvider[] {
-  return (ALL_AI_PROVIDERS as readonly AIProvider[]).filter((provider) => provider !== standbyProvider);
-}
-
-export function normalizeStandbyProvider(value: unknown): AIProvider {
-  return typeof value === 'string' && PROVIDERS.includes(value as AIProvider)
-    ? (value as AIProvider)
-    : DEFAULT_STANDBY_PROVIDER;
+export function activeProviders(): AIProvider[] {
+  return [...ALL_AI_PROVIDERS];
 }
 
 export function defaultSettings(): AppSettings {
@@ -71,20 +64,14 @@ export function defaultSettings(): AppSettings {
     columnWidths: { ...DEFAULT_COLUMN_WIDTHS },
     slotAssignment: { ...DEFAULT_SLOT_ASSIGNMENT },
     modeRoles: normalizeModeRoleAssignments(undefined),
-    standbyProvider: DEFAULT_STANDBY_PROVIDER,
     openProviders: [],
-    adapterBaseUrl: '',
-    updaterChannel: 'stable',
     portable: false,
     telemetry: 'none',
+    saveConversationContent: false,
     snapshotPersistence: false,
     snapshotRedactionTier: 'metadata-only',
     presentation: defaultPresentation(),
   };
-}
-
-function stringValue(value: unknown, fallback: string): string {
-  return typeof value === 'string' ? value : fallback;
 }
 
 function providerList(value: unknown): AIProvider[] {
@@ -142,19 +129,11 @@ export function normalizeSettings(value: unknown): AppSettings {
     input.settingsSchemaVersion >= 0
       ? input.settingsSchemaVersion
       : 0;
-  const normalizedStandbyProvider = normalizeStandbyProvider(input.standbyProvider);
-  const activeProviders = activeProvidersForStandby(normalizedStandbyProvider);
   const normalizedModeRoles =
     storedSchemaVersion < LEGACY_MODE_ROLE_MIGRATION_VERSION
       ? migrateLegacyModeRoleAssignments(input.modeRoles, defaults.modeRoles)
       : normalizeModeRoleAssignments(input.modeRoles, defaults.modeRoles);
-  const standbyPresentation = Object.fromEntries(
-    PROVIDERS.map((provider) => [provider, provider === normalizedStandbyProvider ? 'chip' : 'side']),
-  ) as PresentationByProvider;
-  const presentationInput = input.presentation && typeof input.presentation === 'object'
-    ? { ...(input.presentation as Record<string, unknown>), [normalizedStandbyProvider]: 'chip' }
-    : input.presentation;
-  const normalizedPresentation = normalizePresentation(presentationInput, standbyPresentation);
+  const normalizedPresentation = normalizePresentation(input.presentation, defaults.presentation);
 
   return {
     settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
@@ -166,16 +145,14 @@ export function normalizeSettings(value: unknown): AppSettings {
     focusPaneWidth: focusPaneWidth(input.focusPaneWidth, input.columnWidths, defaults.focusPaneWidth),
     columnWidths: normalizedColumnWidths,
     slotAssignment: normalizeSlotAssignment(input.slotAssignment, defaults.slotAssignment),
-    modeRoles: keepModeRolesWithinProviders(normalizedModeRoles, activeProviders),
-    standbyProvider: normalizedStandbyProvider,
-    openProviders: Array.from(new Set(providerList(input.openProviders))).filter((provider) => provider !== normalizedStandbyProvider),
-    adapterBaseUrl: stringValue(input.adapterBaseUrl, defaults.adapterBaseUrl),
-    updaterChannel: stringValue(input.updaterChannel, defaults.updaterChannel),
+    modeRoles: keepModeRolesWithinProviders(normalizedModeRoles, activeProviders()),
+    openProviders: Array.from(new Set(providerList(input.openProviders))),
     portable: input.portable === true,
     telemetry: 'none',
+    saveConversationContent: input.saveConversationContent === true,
     snapshotPersistence: input.snapshotPersistence === true,
     snapshotRedactionTier: snapshotRedactionTier(input.snapshotRedactionTier, defaults.snapshotRedactionTier),
-    presentation: { ...normalizedPresentation, [normalizedStandbyProvider]: 'chip' },
+    presentation: normalizedPresentation,
   };
 }
 

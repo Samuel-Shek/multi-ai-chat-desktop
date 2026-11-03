@@ -23,10 +23,10 @@ describe('adapter permission summaries', () => {
   });
 
   it('uses the fixed generic envelope when selector details are not available', () => {
-    const summary = buildAdapterPermissionSummary('claude');
+    const summary = buildAdapterPermissionSummary('grok');
 
-    expect(summary.provider).toBe('claude');
-    expect(summary.providerName).toBe('Claude');
+    expect(summary.provider).toBe('grok');
+    expect(summary.providerName).toBe('Grok');
     expect(summary.selectorDetailsAvailable).toBe(false);
     expect(summary.note).toContain('not exposed');
     expect(summary.reads.map((line) => line.detail)).toEqual([
@@ -36,8 +36,8 @@ describe('adapter permission summaries', () => {
       'Reads broken-adapter diagnostics only when YOU click Report: which selectors match/miss, allowlisted element attributes, and text LENGTHS - never the page/message text itself.',
     ]);
     expect(summary.writes.map((line) => line.detail)).toEqual([
-      "Types your prompt into Claude's composer element identified by the adapter.",
-      "Clicks Claude's Send control identified by the adapter.",
+      "Types your prompt into Grok's composer element identified by the adapter.",
+      "Clicks Grok's Send control identified by the adapter.",
       'Dispatches Enter to the composer when the send button is missing/disabled or the adapter uses the enter send-strategy.',
       'Clicks the adapter-defined stop button to cancel an in-flight run.',
     ]);

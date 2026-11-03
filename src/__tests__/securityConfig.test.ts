@@ -13,7 +13,7 @@ describe('Tauri control-pane security boundary', () => {
     expect(tauriConfig.app.security).toMatchObject({
       csp: {
         'default-src': "'self'",
-        'connect-src': 'ipc: http://ipc.localhost https://api.github.com',
+        'connect-src': 'ipc: http://ipc.localhost',
         'img-src': "'self' asset: http://asset.localhost blob: data:",
         'style-src': "'self' 'unsafe-inline'",
       },
