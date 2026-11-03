@@ -11,7 +11,7 @@ export async function fillAndAwaitNativeSend(
   provider: AIProvider,
   text: string,
   reservedTurn?: number,
-): Promise<{ response: string; turn: number }> {
+): Promise<{ response: string; turn: number; truncated: boolean }> {
   const turn = reservedTurn ?? reserveTurn(provider);
   setProviderAwaiting(provider, true);
   const responsePromise = waitForResponse(provider, turn);
@@ -27,8 +27,8 @@ export async function fillAndAwaitNativeSend(
   }
   try {
     const response = await responsePromise;
-    consumeTruncated(provider, turn);
-    return { response, turn };
+    const truncated = consumeTruncated(provider, turn);
+    return { response, turn, truncated };
   } finally {
     clearInFlight(provider);
   }

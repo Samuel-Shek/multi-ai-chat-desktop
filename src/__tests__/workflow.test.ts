@@ -1168,6 +1168,81 @@ describe('workflow engine', () => {
     });
   });
 
+  it.each([
+    [{ text: 'partial native answer', truncated: true }, 'truncated or did not finish streaming'],
+    ['Please verify you are human', 'human verification'],
+    ['Usage limit reached', 'rate or usage limit'],
+  ])('pauses a native-edit debate reply %j without forwarding or resending', async (payload, pauseText) => {
+    const statuses: string[] = [];
+    const unsubscribeStatus = onBridgeMessage((message) => {
+      if (message.action === 'WORKFLOW_STATUS' && typeof message.payload === 'string') statuses.push(message.payload);
+    });
+    const unsubscribeCheckpoint = onCheckpoint((pending) => {
+      if (pending) resolveCheckpoint(pending.nodeId, {
+        action: pending.nodeId === 'pro' ? 'native-edit' : 'confirm',
+        draft: pending.draft,
+      });
+    });
+    vi.mocked(host.provider.fill).mockImplementation(async (provider) => {
+      publishBridgeMessage({ ...done(provider), payload });
+    });
+    vi.mocked(host.provider.send).mockImplementation(async (provider) => {
+      publishBridgeMessage(done(provider));
+    });
+
+    await expect(runWorkflow({ text: 'native stop', mode: 'debate', roles: DEFAULT_DEBATE_ROLES, checkpoints: true })).resolves.toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(SEND_REJECTION_RETRY_DELAY_MS);
+
+    unsubscribeCheckpoint();
+    unsubscribeStatus();
+    expect(statuses.at(-1)).toContain(pauseText);
+    expect(host.provider.fill).toHaveBeenCalledTimes(1);
+    expect(host.provider.send).not.toHaveBeenCalled();
+    expect(getLastSnapshot()?.steps).toHaveLength(1);
+    expect(getLastSnapshot()?.steps[0].status).toBe('error');
+  });
+
+  it.each(['send', 'native-edit'] as const)('waits for the timed-out debate provider to stop before a new workflow (%s)', async (path) => {
+    const provider = DEFAULT_DEBATE_ROLES.pro;
+    let waitingForResponse = false;
+    let finishStop!: () => void;
+    const stopPending = new Promise<void>((resolve) => { finishStop = resolve; });
+    vi.mocked(host.provider.stop).mockImplementationOnce(async () => {
+      await stopPending;
+      waitingForResponse = false;
+    });
+    vi.mocked(host.provider.send).mockImplementation(async () => { waitingForResponse = true; });
+    vi.mocked(host.provider.fill).mockImplementation(async () => { waitingForResponse = true; });
+    const unsubscribeCheckpoint = onCheckpoint((pending) => {
+      if (pending) resolveCheckpoint(pending.nodeId, { action: 'native-edit', draft: pending.draft });
+    });
+    const run = runWorkflow({ text: 'timeout question', mode: 'debate', roles: DEFAULT_DEBATE_ROLES, checkpoints: path === 'native-edit' });
+    const initialSendCount = path === 'send' ? 1 : 0;
+    await vi.waitFor(() => expect(waitingForResponse).toBe(true));
+    await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS);
+    expect(host.provider.stop).toHaveBeenCalledWith(provider);
+
+    let settled = false;
+    void run.then(() => { settled = true; });
+    vi.mocked(host.provider.send).mockImplementation(async (target) => {
+      if (waitingForResponse) throw new Error('response in flight');
+      publishBridgeMessage(done(target, 'new question answer'));
+    });
+    const next = runWorkflow({ text: 'explicit new question', mode: 'debate', roles: DEFAULT_DEBATE_ROLES });
+    await vi.advanceTimersByTimeAsync(SEND_REJECTION_RETRY_DELAY_MS);
+    expect(settled).toBe(false);
+    expect(host.provider.send).toHaveBeenCalledTimes(initialSendCount);
+    expect(host.provider.fill).toHaveBeenCalledTimes(path === 'native-edit' ? 1 : 0);
+
+    finishStop();
+    await expect(run).resolves.toEqual({ ok: true });
+    await expect(next).resolves.toEqual({ ok: true });
+    unsubscribeCheckpoint();
+    expect(host.provider.send).toHaveBeenCalledTimes(initialSendCount + 4);
+    expect(getLastSnapshot()?.steps).toHaveLength(4);
+    expect(getLastSnapshot()?.steps.every((step) => step.status === 'done')).toBe(true);
+  });
+
   it('CANCEL_WORKFLOW during native-edit wait clears the native waiter without sending for that provider', async () => {
     const checkpoints: PendingCheckpoint[] = [];
     const unsubscribeCheckpoint = onCheckpoint((pending) => {

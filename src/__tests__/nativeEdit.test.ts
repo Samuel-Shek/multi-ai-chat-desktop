@@ -7,7 +7,7 @@ import { host } from '../host';
 import { getInFlightProviders, resetCancelState } from '../workflow/cancel';
 import { fillAndAwaitNativeSend } from '../workflow/nativeEdit';
 import { getActiveTurn, resetWorkflowStateForTests } from '../workflow/state';
-import { hasWaiter, resetWaitForResponseForTests } from '../workflow/waitForResponse';
+import { consumeTruncated, hasWaiter, resetWaitForResponseForTests } from '../workflow/waitForResponse';
 
 vi.mock('../host', () => ({
   host: {
@@ -60,7 +60,7 @@ describe('fillAndAwaitNativeSend', () => {
     expect(host.provider.evalWithCallback).toHaveBeenCalled();
 
     publishBridgeMessage(done('native response'));
-    await expect(result).resolves.toEqual({ response: 'native response', turn: 1 });
+    await expect(result).resolves.toEqual({ response: 'native response', turn: 1, truncated: false });
     expect(getInFlightProviders()).toEqual([]);
     expect(hasWaiter('chatgpt', 1)).toBe(false);
     expect(getActiveTurn('chatgpt')).toBeUndefined();
@@ -68,6 +68,15 @@ describe('fillAndAwaitNativeSend', () => {
     const pullCalls = vi.mocked(host.provider.evalWithCallback).mock.calls.length;
     await vi.advanceTimersByTimeAsync(POLL_PULL_MS * 2);
     expect(host.provider.evalWithCallback).toHaveBeenCalledTimes(pullCalls);
+  });
+
+  it('returns the native reply truncation flag and consumes it only once', async () => {
+    const result = fillAndAwaitNativeSend('chatgpt', 'draft text');
+    await Promise.resolve();
+    publishBridgeMessage({ ...done(), payload: { text: 'partial reply', truncated: true } });
+
+    await expect(result).resolves.toEqual({ response: 'partial reply', turn: 1, truncated: true });
+    expect(consumeTruncated('chatgpt', 1)).toBe(false);
   });
 
   it('rejects the waiter, clears in-flight and awaiting state, and rethrows fill failures', async () => {

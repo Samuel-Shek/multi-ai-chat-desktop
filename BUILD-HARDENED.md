@@ -6,22 +6,22 @@ The commands below were checked for syntax against this repository. The DMG itse
 
 ## Toolchain
 
-Install these, then record the versions you actually used (`node -v`, `pnpm -v`, `rustc -vV`).
+Install these, then record the versions you actually used (`node -v`, `corepack pnpm -v`, `rustc -vV`).
 
 | Tool | Version to use |
 |---|---|
 | macOS | 14 or later. The login split uses `WKWebsiteDataStore dataStoreForIdentifier`, which is macOS 14+. |
 | Xcode Command Line Tools | Current tools for your macOS. `xcode-select --install` if `clang` is missing. A full Xcode install is not required. |
-| Node.js | 24, or any release matching `^22.13.0 \|\| >=24.0.0` from `package.json`. The upstream v1.9.6 macOS release job used Node 24. The Linux check of this fork used Node v22.23.4. |
-| pnpm | **11.0.0**, the version in `packageManager`. Enable it with `corepack enable && corepack prepare pnpm@11.0.0 --activate`. |
-| Rust | **1.85 or newer** (`rust-version` in `src-tauri/Cargo.toml`). A dependency needs Cargo's edition 2024, so 1.83 and older will not compile. The Linux test run of this fork used **rustc 1.99.1**. The upstream v1.9.6 release log used 1.98.1. Install with `rustup update stable` and use the Apple Silicon host (`aarch64-apple-darwin`). |
+| Node.js | 24, or any release matching `^22.13.0 \|\| >=24.0.0` from `package.json`. The M2 build used **v22.22.3**. The upstream v1.9.6 macOS release job used Node 24. The Linux check of this fork used Node v22.23.4. |
+| pnpm | **11.0.0**, the version in `packageManager` and used for the M2 build via **`corepack pnpm`**, because global `pnpm` on that Mac is version 10. Use `corepack pnpm` for the commands below. |
+| Rust | **1.85 or newer** (`rust-version` in `src-tauri/Cargo.toml`). The M2 build used **rustc 1.95.0**. A dependency needs Cargo's edition 2024, so 1.83 and older will not compile. The Linux test run of this fork used **rustc 1.99.1**. The upstream v1.9.6 release log used 1.98.1. Install with `rustup update stable` and use the Apple Silicon host (`aarch64-apple-darwin`). |
 
 ```bash
 xcode-select --install
 node -v
 corepack enable
 corepack prepare pnpm@11.0.0 --activate
-pnpm -v
+corepack pnpm -v
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup default stable
 rustup target add aarch64-apple-darwin
@@ -37,25 +37,52 @@ git status --porcelain
 git rev-parse HEAD
 ```
 
-`git status --porcelain` must print nothing. The commit to build is the full SHA from `git rev-parse HEAD`. That SHA is also the first line of `scripts/record-build-fingerprint.sh`. The pull request checklist names the same SHA. Do not build any other commit.
+`git status --porcelain` must print nothing. The commit to build is the full SHA from `git rev-parse HEAD`. On success, `scripts/record-build-fingerprint.sh` prints that SHA in its first output line, prefixed with `commit`; the script's first source line is the `#!/bin/sh` shebang. The pull request checklist names the same SHA. Do not build any other commit. The fingerprint records the current HEAD and artifact hashes; it does not by itself prove that existing artifacts were built from that HEAD. Keep the build log from this clean commit with the fingerprint.
 
 ## Commands
 
-From the repository root, on that commit:
+From the repository root, on that commit, with a graphical desktop session:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm verify
+corepack pnpm install --frozen-lockfile
+corepack pnpm verify
 cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
-pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg -- --locked
+corepack pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg -- --locked
+hdiutil verify "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Multi-AI Chat Hardened_<version>_aarch64.dmg"
 sh scripts/record-build-fingerprint.sh
 ```
 
-`pnpm verify` typechecks, lints, runs the frontend tests, checks the bundled adapters, builds the frontend, and fails if that build or the Rust sources reference `raw.githubusercontent.com`, `api.github.com`, or any other host that is not one of the three providers, their login hosts, or Tauri's local IPC hosts.
+Replace `<version>` with the version printed by the build. `corepack pnpm verify` typechecks, lints, runs the frontend tests, checks the bundled adapters, builds the frontend, and fails if that build or the Rust sources reference `raw.githubusercontent.com`, `api.github.com`, or any other host that is not one of the three providers, their login hosts, or Tauri's local IPC hosts.
 
 `--frozen-lockfile` stops pnpm from changing `pnpm-lock.yaml`. `--locked` stops Cargo from changing `Cargo.lock` during the test and the app build.
 
-`scripts/record-build-fingerprint.sh` prints the commit, the SHA-256 of `pnpm-lock.yaml` and `src-tauri/Cargo.lock`, the SHA-256 of the ARM64 app binary and `.dmg` when those files exist, and the `codesign` display plus `codesign --verify --deep --strict` when `codesign` exists. Keep that output with the disk image. A dirty tree makes the script exit without printing a fingerprint.
+In a shell without a graphical desktop session, `pnpm tauri build --bundles app,dmg` fails at the Finder AppleScript step in Tauri's generated `bundle_dmg.sh`. Use the following route to build the app and create the DMG without Finder layout customization.
+
+**Prerequisite:** `bundle_dmg.sh` exists only after at least one `--bundles app,dmg` attempt, even if that attempt failed at Finder. If it is absent, run the combined build command above once to generate it; a Finder AppleScript failure in that attempt is expected in this shell. Other build failures must be resolved before continuing. Do not create or hand-edit this generated script.
+
+After that prerequisite, build the app first, then copy it into a temporary source directory and invoke the same Tauri-generated script with `--skip-jenkins`:
+
+```bash
+corepack pnpm tauri build --target aarch64-apple-darwin --bundles app -- --locked
+SRC=$(mktemp -d "${TMPDIR:-/tmp}/multi-ai-chat-dmg.XXXXXX")
+cp -R "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Multi-AI Chat Hardened.app" "$SRC/"
+VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('src-tauri/tauri.conf.json', 'utf8')).version")
+DMG="src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Multi-AI Chat Hardened_${VERSION}_aarch64.dmg"
+bash src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/bundle_dmg.sh \
+  --skip-jenkins \
+  --volname "Multi-AI Chat Hardened" \
+  --volicon src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/icon.icns \
+  --app-drop-link 400 200 \
+  --window-pos 200 120 \
+  --window-size 600 400 \
+  --icon-size 100 \
+  --icon "Multi-AI Chat Hardened.app" 150 200 \
+  "$DMG" "$SRC"
+hdiutil verify "$DMG"
+sh scripts/record-build-fingerprint.sh
+```
+
+`scripts/record-build-fingerprint.sh` exits with status **1** and a clear reason for a dirty tree, a missing app bundle or app binary, zero or multiple `.dmg` files in the fixed DMG directory, a non-arm64 binary, a failed `codesign --verify --deep --strict`, or a signature Identifier other than `com.samuelshek.multiaichat.hardened`. Missing `codesign` or unreadable signature information also fails, since the Identifier cannot be verified. Only on success does it print the commit, the SHA-256 of both lockfiles, the ARM64 app binary and the single DMG, plus the signature details and verification result. Keep that output with the disk image and build log.
 
 The first Rust release build compiles the Tauri crates and can take several minutes. Later builds are shorter.
 

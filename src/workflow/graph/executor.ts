@@ -2,9 +2,9 @@ import { AI_PROVIDERS, CHAT_MODES } from '../../../shared/constants';
 import type { AIProvider, ChatMode } from '../../../shared/types';
 import type { Locale } from '../../i18n/resolve';
 import { formatI18n, t } from '../../i18n/t';
-import { abortWorkflow, checkAborted, getInFlightProviders } from '../cancel';
+import { abortWorkflow, checkAborted, getInFlightProviders, stopProvider } from '../cancel';
 import { awaitCheckpoint } from '../checkpoint';
-import { debateForwardingNotice } from '../debatePause';
+import { classifyDebateStop, debateForwardingNotice, DebatePausedError } from '../debatePause';
 import { sendRoleAssignment, sendWorkflowNotice, sendWorkflowStatus } from '../events';
 import { fillAndAwaitNativeSend } from '../nativeEdit';
 import { providerResponseError, ProviderResponseError } from '../providerResponse';
@@ -277,6 +277,7 @@ function prepareStepNode(
       const startedAt = snapshotTimestamp();
       let input = prompt;
       let checkpointAction: 'confirm' | 'native-edit' | undefined;
+      let awaitingProvider = false;
       try {
         if (isCheckpointedSerialStep(node, context, options)) {
           const sourceNodeId = checkpointSourceNodeId(nodeId, context);
@@ -321,13 +322,18 @@ function prepareStepNode(
             }),
           );
         }
-        const result =
+        awaitingProvider = true;
+        const result: { response: string; turn: number; truncated?: boolean } =
           checkpointAction === 'native-edit'
             ? await fillAndAwaitNativeSend(provider, input, turn)
             : await runStep(provider, input, turn, {
                 recoverProviderErrors: context.graph.id === 'brainstorm',
                 pauseInsteadOfRetry: context.graph.id === 'debate',
               });
+        if (checkpointAction === 'native-edit' && context.graph.id === 'debate') {
+          const stop = classifyDebateStop({ response: result.response, truncated: result.truncated });
+          if (stop) throw new DebatePausedError(stop, provider, result.truncated ? 'truncated reply' : result.response);
+        }
         const responseError = providerResponseError(provider, result.response);
         if (responseError) throw responseError;
         recordStep({
@@ -345,6 +351,9 @@ function prepareStepNode(
           appendHistory: renderHistoryAppend(node, context, result.response, provider),
         };
       } catch (error) {
+        // sendAndWait/native-edit already cleared inFlight, so batch cleanup can miss
+        // this provider. Await its engine stop before the workflow can settle.
+        if (context.graph.id === 'debate' && awaitingProvider) await stopProvider(provider);
         clearActiveTurn(provider, turn);
         recordStep({
           nodeId,
